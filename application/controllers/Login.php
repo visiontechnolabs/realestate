@@ -30,19 +30,11 @@ class Login extends CI_Controller
 
 
 
-if ($this->session->userdata('admin')) {
-
-
-
-			if ($this->router->fetch_method() != 'logout') {
-
+        if ($this->session->userdata('admin')) {
+            if ($this->router->fetch_method() != 'logout') {
                 redirect('dashboard');
-
             }
-
-
-
-		}
+        }
 
     }
 
@@ -70,10 +62,15 @@ if ($this->session->userdata('admin')) {
                     'user_id'       => $user->id,
                     'user_name'     => $user->name,
                     'business_name' => $user->business_name,
+                    'profile_image' => $user->profile_image ?? null,
+                    'role'          => $user->role ?? 'admin',
                     'logged_in'     => TRUE
                 ];
 
                 $this->session->set_userdata('admin', $adminSession);
+                $this->session->unset_userdata('superadmin_original');
+                $this->session->unset_userdata('is_impersonating_admin');
+                $this->session->unset_userdata('impersonated_admin_id');
 
                 $this->session->set_flashdata('success', 'Login successful! Welcome back, ' . $user->name . '.');
                 redirect(base_url('dashboard'));
@@ -138,10 +135,14 @@ if ($this->session->userdata('admin')) {
     'user_id'       => $user_id,
     'user_name'     => $data['name'],
     'business_name' => $data['business_name'],
+    'role'          => 'admin',
     'logged_in'     => TRUE
 ];
 
 $this->session->set_userdata('admin', $adminSession);
+$this->session->unset_userdata('superadmin_original');
+$this->session->unset_userdata('is_impersonating_admin');
+$this->session->unset_userdata('impersonated_admin_id');
 
                 $this->session->set_flashdata('success', 'Registration successful! Welcome, ' . $data['name'] . '.');
                 redirect(base_url('dashboard'));
@@ -156,6 +157,9 @@ $this->session->set_userdata('admin', $adminSession);
         // Clear session and redirect to login page
 
         $this->session->unset_userdata('admin');
+        $this->session->unset_userdata('superadmin_original');
+        $this->session->unset_userdata('is_impersonating_admin');
+        $this->session->unset_userdata('impersonated_admin_id');
 
         $this->session->sess_destroy();
 

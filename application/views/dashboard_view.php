@@ -47,16 +47,27 @@
                 </div>
             </div>
 
-            <!-- Total Users -->
+            <!-- Total Users / Admins -->
             <div class="col">
                 <div class="card radius-10 h-100">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between">
                             <div>
-                                <p class="mb-1 text-secondary">Total Users</p>
-                                <h4 class="my-1"><?= $users_count ?></h4>
+                                <?php if (!empty($is_superadmin)): ?>
+                                    <p class="mb-1 text-secondary">Total Admins</p>
+                                    <h4 class="my-1"><?= $admins_count ?? 0 ?></h4>
+                                <?php else: ?>
+                                    <p class="mb-1 text-secondary">Total Users</p>
+                                    <h4 class="my-1"><?= $users_count ?></h4>
+                                <?php endif; ?>
                                 <p class="mb-0 font-13 text-danger">
-                                    <i class="bx bxs-up-arrow"></i> <?= $users_last_week ?> from last week
+                                    <i class="bx bxs-up-arrow"></i>
+                                    <?php if (!empty($is_superadmin)): ?>
+                                        <?= $admins_last_week ?? 0 ?>
+                                    <?php else: ?>
+                                        <?= $users_last_week ?>
+                                    <?php endif; ?>
+                                    from last week
                                 </p>
                             </div>
                             <div class="widgets-icons bg-light-danger text-danger">
@@ -68,34 +79,63 @@
             </div>
 
             <!-- Total Inquiry -->
-            <div class="col">
-                <div class="card radius-10 h-100">
-                    <div class="card-body">
-                        <div class="d-flex align-items-center justify-content-between">
-                            <div>
-                                <p class="mb-1 text-secondary">Total Inquiry</p>
-                                <h4 class="my-1"><?= $Inquiry_count ?></h4>
-                                <p class="mb-0 font-13 text-warning">
-                                    <i class="bx bxs-down-arrow"></i> <?= $inquiry_last_week ?> from last week
-                                </p>
-                            </div>
-                            <div class="widgets-icons bg-light-warning text-warning">
-                                <i class="bx bx-message-dots"></i>
+            <?php if (empty($is_superadmin)): ?>
+                <div class="col">
+                    <div class="card radius-10 h-100">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div>
+                                    <p class="mb-1 text-secondary">Total Inquiry</p>
+                                    <h4 class="my-1"><?= $Inquiry_count ?></h4>
+                                    <p class="mb-0 font-13 text-warning">
+                                        <i class="bx bxs-down-arrow"></i> <?= $inquiry_last_week ?> from last week
+                                    </p>
+                                </div>
+                                <div class="widgets-icons bg-light-warning text-warning">
+                                    <i class="bx bx-message-dots"></i>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            <?php endif; ?>
+
+            <?php if (!empty($is_superadmin)): ?>
+                <div class="col">
+                    <div class="card radius-10 h-100">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div>
+                                    <p class="mb-1 text-secondary">Image Requests</p>
+                                    <h4 class="my-1"><?= $image_requests_pending ?? 0 ?></h4>
+                                    <p class="mb-0 font-13 text-warning">
+                                        <i class="bx bxs-down-arrow"></i> Pending approvals
+                                    </p>
+                                </div>
+                                <div class="widgets-icons bg-light-warning text-warning">
+                                    <i class="bx bx-image"></i>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <a href="<?= base_url('superadmin/sites'); ?>" class="btn btn-sm btn-outline-warning">Review</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
 
         </div>
         <!-- END DASHBOARD CARDS -->
+
+        <?php if (!empty($is_superadmin)): ?>
+        <?php endif; ?>
 
 
         <!-- ===========================
              CARD DATA SECTION (LEFT + DUPLICATE RIGHT)
         ============================ -->
         <div class="row mt-4">
-            
+            <?php if (empty($is_superadmin)): ?>
             <!-- LEFT SECTION -->
             <div class="col-md-6">
                 <div class="card border-0 rounded-4 shadow-none bg-transparent">
@@ -211,6 +251,50 @@
                             <p class="mb-0">Debit Money</p>
                         </div>
                     </div> -->
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+            </div>
+            <?php endif; ?>
+            <div class="col-md-6">
+                <div class="card border-0 rounded-4 shadow-none bg-transparent">
+    <div class="card-body p-0">
+        <div class="card rounded-4">
+            <div class="card-body">
+
+                <div class="d-flex align-items-start justify-content-between mb-3">
+                    <h6 class="mb-0">Map Data</h6>
+                </div>
+
+                <div class="d-flex align-items-center gap-3 mb-4">
+                    <div class="widgets-icons bg-light-primary text-primary rounded-circle d-flex align-items-center justify-content-center">
+                        <i class="bx bx-map"></i>
+                    </div>
+                    <div>
+                        <h3 class="mb-0"><?= $maps_total ?? 0 ?></h3>
+                        <p class="mb-0 text-secondary">Total Maps</p>
+                    </div>
+                </div>
+
+                <div class="row row-cols-1 row-cols-lg-2 g-3">
+                    <div class="col">
+                        <div class="border rounded-4 p-3">
+                            <div class="fs-3 text-warning"><i class="bx bx-hourglass"></i></div>
+                            <h5 class="my-1"><?= $maps_pending ?? 0 ?></h5>
+                            <p class="mb-0">Pending</p>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="border rounded-4 p-3">
+                            <div class="fs-3 text-success"><i class="bx bx-check-circle"></i></div>
+                            <h5 class="my-1"><?= $maps_uploaded ?? 0 ?></h5>
+                            <p class="mb-0">Approved</p>
+                        </div>
+                    </div>
                 </div>
 
             </div>
