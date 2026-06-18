@@ -1,4 +1,5 @@
-<div class="page-wrapper">
+<?php $this->load->view('partials/admin_form_theme'); ?>
+<div class="page-wrapper admin-form-page">
     <div class="page-content">
 
         <!-- Breadcrumb -->
@@ -18,7 +19,7 @@
         </div>
 
         <!-- Add User Card -->
-        <div class="card">
+        <div class="card admin-form-card">
             <div class="card-body p-4">
                 <h5 class="card-title">Add New User</h5>
                 <hr>
@@ -26,7 +27,7 @@
                 <div class="form-body mt-4">
                     <div class="row">
                         <div class="col">
-                            <form id="addUserForm"  method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
+                            <form id="addUserForm" method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
 
                                 <!-- User Name -->
                                 <div class="mb-3">
@@ -49,22 +50,22 @@
                                     <div class="invalid-feedback">Please enter a valid 10-digit mobile number.</div>
                                 </div>
                                 <div class="mb-3">
-        <label for="dailySalary" class="form-label">Daily Salary (₹)</label>
-        <input type="number" name="daily_salary" class="form-control" id="dailySalary"
-               placeholder="Enter daily salary (e.g. 200)" min="1" required>
-        <div class="invalid-feedback">Please enter a valid daily salary amount.</div>
-    </div>
+                                    <label for="dailySalary" class="form-label">Daily Salary (INR)</label>
+                                    <input type="number" name="daily_salary" class="form-control" id="dailySalary"
+                                        placeholder="Enter daily salary (e.g. 200)" min="1" required>
+                                    <div class="invalid-feedback">Please enter a valid daily salary amount.</div>
+                                </div>
 
                                 <!-- Profile Image -->
                                 <div class="mb-3">
                                     <label for="profileImage" class="form-label">Profile Image</label>
-                                    <input type="file" name="profile_image" class="form-control" id="profileImage" accept="image/*" >
+                                    <input type="file" name="profile_image" class="form-control" id="profileImage" accept="image/*">
                                     <div class="form-text">Allowed formats: JPG, JPEG, PNG. Max size: 2MB</div>
-                                        <img id="imagePreview" src="#" alt="Preview" style="display:none; margin-top:10px; max-width:150px; border-radius:10px;">
+                                    <img id="imagePreview" src="#" alt="Preview" style="display:none; margin-top:10px; max-width:150px; border-radius:10px;">
 
                                 </div>
 
-                               
+
 
                                 <!-- Password -->
                                 <div class="mb-3">
@@ -91,4 +92,3 @@
 
     </div>
 </div>
-

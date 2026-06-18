@@ -1,4 +1,5 @@
-<div class="page-wrapper">
+<?php $this->load->view('partials/admin_form_theme'); ?>
+<div class="page-wrapper admin-form-page">
     <div class="page-content">
 
         <!-- Breadcrumb -->
@@ -18,7 +19,7 @@
         </div>
 
         <!-- Add Site Card -->
-        <div class="card">
+        <div class="card admin-form-card">
             <div class="card-body p-4">
                 <h5 class="card-title">Add New Site</h5>
                 <hr>
@@ -50,19 +51,19 @@
                                 </div>
 
                                 <!-- Total Plots -->
-                                <div class="mb-3">
+                                <!-- <div class="mb-3">
                                     <label for="totalPlots" class="form-label">Total Plots</label>
                                     <input type="number" name="total_plots" class="form-control" id="totalPlots" placeholder="Enter total plots" min="1" required>
                                     <div class="invalid-feedback">Please enter the number of plots.</div>
-                                </div>
+                                </div> -->
 
                                 <!-- Site Images -->
-                                <div class="mb-3">
+                                <!-- <div class="mb-3">
                                     <label for="siteImages" class="form-label">Site Images</label>
                                     <input type="file" name="site_images[]" class="form-control" id="siteImages" accept="image/*" multiple>
                                     <small class="text-muted">You can select multiple images.</small>
                                     <div id="siteImagesPreview" class="mt-2 d-flex flex-wrap gap-2"></div>
-                                </div>
+                                </div> -->
 
                                 <!-- Submit Button -->
                                 <div class="mb-3">

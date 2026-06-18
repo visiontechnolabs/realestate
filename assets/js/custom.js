@@ -18,6 +18,14 @@ $(document).ready(function () {
 			}
 		});
 	}
+
+	if ($("#siteName").is("select") && typeof $.fn.select2 === "function") {
+		$("#siteName").select2({
+			placeholder: "Select Site",
+			allowClear: true,
+			width: "100%",
+		});
+	}
 });
 
 // Image preview
@@ -152,9 +160,9 @@ $(document).ready(function () {
 				success: function (response) {
 					Swal.close();
 					if (response.status === "success") {
-						Swal.fire("Success!", response.message, "success");
-						$("#addSiteForm")[0].reset();
-						$("#addSiteForm").removeClass("was-validated");
+						Swal.fire("Success!", response.message, "success").then(() => {
+							window.location.href = site_url + "site";
+						});
 					} else {
 						Swal.fire("Error!", response.message, "error");
 					}
@@ -228,9 +236,14 @@ $(document).ready(function () {
 				success: function (response) {
 					Swal.close();
 					if (response.status === "success") {
-						Swal.fire("Success!", response.message, "success");
-						$("#addPlotForm")[0].reset();
-						$("#addPlotForm").removeClass("was-validated");
+						Swal.fire("Success!", response.message, "success").then(() => {
+							const siteId = formData.get("site_id");
+							if (siteId) {
+								window.location.href = site_url + "plots/" + siteId;
+							} else {
+								window.location.href = site_url + "plots";
+							}
+						});
 					} else {
 						Swal.fire("Error!", response.message, "error");
 					}
@@ -275,11 +288,9 @@ $(document).ready(function () {
 				success: function (response) {
 					Swal.close();
 					if (response.status === "success") {
-						Swal.fire("Success!", response.message, "success");
-						$("#addexpForm")[0].reset();
-						$("#addexpForm").removeClass("was-validated");
-						$("#expenseImageFieldWrap").addClass("d-none");
-						$("#expenseImagePreview").empty();
+						Swal.fire("Success!", response.message, "success").then(() => {
+							window.location.href = site_url + "expenses";
+						});
 					} else {
 						Swal.fire("Error!", response.message, "error");
 					}
@@ -316,69 +327,251 @@ $(document).ready(function () {
 			preview.empty();
 
 			const file = this.files && this.files[0];
-			if (!file || !file.type.startsWith("image/")) return;
+			if (!file) return;
 
-			const reader = new FileReader();
-			reader.onload = function (event) {
+			// Validate file size (100 KB = 100 * 1024 bytes)
+			if (file.size > 100 * 1024) {
+				Swal.fire("Error!", "File size must be 100KB or less.", "error");
+				$(this).val("");
+				return;
+			}
+
+			// Validate file type (jpg, jpeg, png, pdf)
+			const allowedTypes = [
+				"image/jpeg",
+				"image/jpg",
+				"image/png",
+				"application/pdf",
+			];
+			if (!allowedTypes.includes(file.type)) {
+				const ext = file.name.split(".").pop().toLowerCase();
+				const allowedExts = ["jpg", "jpeg", "png", "pdf"];
+				if (!allowedExts.includes(ext)) {
+					Swal.fire(
+						"Error!",
+						"Only JPG, JPEG, PNG, and PDF files are allowed.",
+						"error",
+					);
+					$(this).val("");
+					return;
+				}
+			}
+
+			// Render preview
+			if (file.type.startsWith("image/")) {
+				const reader = new FileReader();
+				reader.onload = function (event) {
+					preview.html(
+						`<img src="${event.target.result}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;" alt="Expense image preview" />`,
+					);
+				};
+				reader.readAsDataURL(file);
+			} else if (
+				file.type === "application/pdf" ||
+				file.name.toLowerCase().endsWith(".pdf")
+			) {
 				preview.html(
-					`<img src="${event.target.result}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;" alt="Expense image preview" />`,
+					`<div class="d-flex align-items-center gap-2" style="background: #fef2f2; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 8px; color: #b91c1c; font-size: 0.85rem; max-width: 300px;">
+						<i class="bx bxs-file-pdf" style="font-size: 1.5rem;"></i>
+						<span class="text-truncate fw-semibold">${file.name.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</span>
+					</div>`,
 				);
-			};
-			reader.readAsDataURL(file);
+			}
 		});
 	}
 
-	$("#editPlotForm").on("submit", function (e) {
-		e.preventDefault();
+	if ($("#editPlotForm").length) {
+		let previousStatus = $('#plotStatus').val();
+		window.buyerDetailsSaved = !!$('#modalBuyerName').val();
 
-		let formData = new FormData(this);
+		if ($('#plotStatus').val() === 'sold') {
+			$('#buyerDetailsBtnWrap').removeClass('d-none');
+		}
 
-		$.ajax({
-			url: site_url + "plots/update_plot",
-			type: "POST",
-			data: formData,
-			processData: false,
-			contentType: false,
+		// Toggle EMI fields visibility
+		function toggleEmiFields() {
+			const mode = $('#modalPaymentMode').val();
+			if (mode === 'EMI') {
+				$('#emiFieldsGroup').removeClass('d-none');
+				$('#modalEmiDuration, #modalEmiStartDate, #modalInstallmentAmount').prop('required', true);
+			} else {
+				$('#emiFieldsGroup').addClass('d-none');
+				$('#modalEmiDuration, #modalEmiStartDate, #modalInstallmentAmount').prop('required', false);
+			}
+		}
 
-			beforeSend: function () {
+		$('#modalPaymentMode').on('change', toggleEmiFields);
+		toggleEmiFields(); // run initially
+
+		// Status select handler
+		$('#plotStatus').on('focus', function() {
+			previousStatus = $(this).val();
+		}).on('change', function() {
+			if ($(this).val() === 'sold') {
+				$('#buyerDetailsBtnWrap').removeClass('d-none');
+				// If total price in modal is empty, pre-fill from main form price field
+				if (!$('#modalTotalPrice').val()) {
+					$('#modalTotalPrice').val($('#plotPrice').val());
+				}
+				calculatePayments();
+				$('#buyerDetailsModal').modal('show');
+			} else {
+				$('#buyerDetailsBtnWrap').addClass('d-none');
+			}
+		});
+
+		$('#btnEditBuyerDetails').on('click', function() {
+			// Update total price from main form if it was changed
+			if (!$('#modalTotalPrice').val()) {
+				$('#modalTotalPrice').val($('#plotPrice').val());
+			}
+			calculatePayments();
+			$('#buyerDetailsModal').modal('show');
+		});
+
+		// Auto-calculate payments
+		function calculatePayments() {
+			const total = parseFloat($('#modalTotalPrice').val()) || 0;
+			const down = parseFloat($('#modalDownPayment').val()) || 0;
+			const remaining = Math.max(0, total - down);
+			$('#modalRemainingAmount').val(remaining);
+
+			const duration = parseInt($('#modalEmiDuration').val()) || 0;
+			if (duration > 0 && $('#modalPaymentMode').val() === 'EMI') {
+				const installment = Math.ceil(remaining / duration);
+				$('#modalInstallmentAmount').val(installment);
+			}
+		}
+
+		$('#modalTotalPrice, #modalDownPayment, #modalEmiDuration').on('input', calculatePayments);
+
+		// Save details click handler
+		$('#btnSaveBuyerDetails').on('click', function() {
+			const modalForm = document.getElementById('buyerDetailsForm');
+			if (!modalForm.checkValidity()) {
+				$(modalForm).addClass('was-validated');
+				return;
+			}
+
+			const mainForm = document.getElementById('editPlotForm');
+			if (!mainForm.checkValidity()) {
+				$('#buyerDetailsModal').modal('hide');
+				$(mainForm).addClass('was-validated');
 				Swal.fire({
-					title: "Updating...",
-					text: "Please wait",
-					allowOutsideClick: false,
-					didOpen: () => Swal.showLoading(),
+					icon: 'error',
+					title: 'Form Validation Failed',
+					text: 'Please check the required fields on the main form.'
 				});
-			},
+				return;
+			}
 
-			success: function (response) {
-				Swal.close();
+			window.buyerDetailsSaved = true;
+			$('#buyerDetailsModal').modal('hide');
 
-				if (response.status === "success") {
+			// Trigger AJAX submit via submit handler
+			$("#editPlotForm").submit();
+		});
+
+		// Reset status if modal closed without saving
+		$('#buyerDetailsModal').on('hidden.bs.modal', function() {
+			if ($('#plotStatus').val() === 'sold' && !window.buyerDetailsSaved) {
+				$('#plotStatus').val(previousStatus);
+				if (previousStatus !== 'sold') {
+					$('#buyerDetailsBtnWrap').addClass('d-none');
+				}
+			}
+		});
+
+		// Hijack submit and send data via AJAX
+		$("#editPlotForm").on("submit", function(e) {
+			e.preventDefault();
+
+			// Validate main form
+			if (!this.checkValidity()) {
+				$(this).addClass('was-validated');
+				return false;
+			}
+
+			if ($('#plotStatus').val() === 'sold' && !window.buyerDetailsSaved) {
+				Swal.fire({
+					icon: 'warning',
+					title: 'Buyer Details Required',
+					text: 'Please enter the buyer and payment details for this sold plot.'
+				}).then(() => {
+					$('#buyerDetailsModal').modal('show');
+				});
+				return false;
+			}
+
+			let formData = new FormData(this);
+
+			// Append buyer details if plot is sold
+			if ($('#plotStatus').val() === 'sold') {
+				formData.append('buyer_name', $('#modalBuyerName').val());
+				formData.append('buyer_mobile', $('#modalBuyerMobile').val());
+				formData.append('buyer_email', $('#modalBuyerEmail').val());
+				formData.append('buyer_address', $('#modalBuyerAddress').val());
+				formData.append('buyer_aadhar', $('#modalBuyerAadhar').val());
+				formData.append('buyer_user_id', $('#modalBuyerAgent').val());
+				formData.append('payment_mode', $('#modalPaymentMode').val());
+				formData.append('total_price', $('#modalTotalPrice').val());
+				formData.append('down_payment', $('#modalDownPayment').val());
+				formData.append('remaining_amount', $('#modalRemainingAmount').val());
+				formData.append('emi_duration', $('#modalEmiDuration').val());
+				formData.append('emi_start_date', $('#modalEmiStartDate').val());
+				formData.append('installment_amount', $('#modalInstallmentAmount').val());
+				formData.append('payment_notes', $('#modalPaymentNotes').val());
+			}
+
+			$.ajax({
+				url: site_url + "plots/update_plot",
+				type: "POST",
+				data: formData,
+				processData: false,
+				contentType: false,
+				dataType: "json",
+
+				beforeSend: function() {
 					Swal.fire({
-						icon: "success",
-						title: "Updated!",
-						text: response.message,
-					}).then(() => {
-						location.reload();
+						title: "Updating...",
+						text: "Please wait",
+						allowOutsideClick: false,
+						didOpen: () => Swal.showLoading(),
 					});
-				} else {
+				},
+
+
+				success: function(response) {
+					Swal.close();
+
+					if (response.status === "success") {
+						Swal.fire("Success!", response.message, "success").then(() => {
+							const siteId = formData.get("site_id");
+							if (siteId) {
+								window.location.href = site_url + "plots/" + siteId;
+							} else {
+								window.location.href = site_url + "plots";
+							}
+						});
+					} else {
+						Swal.fire({
+							icon: "error",
+							title: "Error",
+							text: response.message,
+						});
+					}
+				},
+				error: function() {
+					Swal.close();
 					Swal.fire({
 						icon: "error",
-						title: "Error",
-						text: response.message,
+						title: "Server Error",
+						text: "Something went wrong!",
 					});
-				}
-			},
-
-			error: function () {
-				Swal.close();
-				Swal.fire({
-					icon: "error",
-					title: "Server Error",
-					text: "Something went wrong!",
-				});
-			},
+				},
+			});
 		});
-	});
+	}
 
 	if ($("#customerTableBody").length) {
 		let currentPage = 1;
@@ -400,7 +593,9 @@ $(document).ready(function () {
 							const mapOk = hasMap;
 							const formatInr = (v) => {
 								const n = Number(v || 0);
-								return Number.isFinite(n) ? `₹${n.toLocaleString("en-IN")}` : "₹0";
+								return Number.isFinite(n)
+									? `₹${n.toLocaleString("en-IN")}`
+									: "₹0";
 							};
 							const siteName = site.name || "-";
 							const siteLocation = site.location || "-";
@@ -712,12 +907,12 @@ $(document).ready(function () {
 			const siteId = $(this).data("id");
 			const adminId = $(this).data("admin"); // âœ… get admin id
 
-		$.ajax({
-    url: site_url + "site/get_users",
-    method: "GET",
-    data: {
-        admin_id: adminId   // ✅ send admin id
-    },
+			$.ajax({
+				url: site_url + "site/get_users",
+				method: "GET",
+				data: {
+					admin_id: adminId, // ✅ send admin id
+				},
 
 				success: function (response) {
 					if (response.status && response.data.length > 0) {
@@ -728,8 +923,8 @@ $(document).ready(function () {
 						Swal.fire({
 							title: "Assign Site",
 							html: `
-                        <label class="swal2-label" style="display:block;margin-bottom:5px;font-weight:600;">Select User</label>
-                        <select id="userDropdown" class="swal2-select" style="width:100%;">
+                        <label class="swal2-label" style="display:block;margin-bottom:12px;font-weight:600;font-size:16px;">Select User</label>
+                        <select id="swalUserDropdown" class="form-select" style="width:100%;">
                             <option value="">Select User</option>
                             ${options}
                         </select>
@@ -738,7 +933,7 @@ $(document).ready(function () {
 							confirmButtonText: "Assign",
 							cancelButtonText: "Cancel",
 							didOpen: () => {
-								$("#userDropdown").select2({
+								$("#swalUserDropdown").select2({
 									dropdownParent: $(".swal2-container"),
 									width: "100%",
 									placeholder: "Search user...",
@@ -747,7 +942,7 @@ $(document).ready(function () {
 							},
 						}).then((result) => {
 							if (result.isConfirmed) {
-								const userId = $("#userDropdown").val();
+								const userId = $("#swalUserDropdown").val();
 
 								if (!userId) {
 									Swal.fire("Error", "Please select a user", "error");
@@ -760,7 +955,7 @@ $(document).ready(function () {
 									data: {
 										site_id: siteId,
 										user_id: userId,
-										admin_id: adminId, // âœ… send admin id
+										admin_id: adminId, // ✅ send admin id
 									},
 									success: function (res) {
 										if (res.status) {
@@ -948,7 +1143,11 @@ $(document).ready(function () {
 		function normalizePlotStatus(rawStatus) {
 			const status = String(rawStatus || "").toLowerCase();
 			if (status === "sold") return "sold";
-			if (status === "booked" || status === "reserved" || status === "pending") {
+			if (
+				status === "booked" ||
+				status === "reserved" ||
+				status === "pending"
+			) {
 				return "booked";
 			}
 			return "available";
@@ -1010,12 +1209,14 @@ $(document).ready(function () {
 			}
 
 			if ($("#statTotalPlots").length) $("#statTotalPlots").text(totalRecords);
-			if ($("#statAvailable").length) $("#statAvailable").text(counts.available);
+			if ($("#statAvailable").length)
+				$("#statAvailable").text(counts.available);
 			if ($("#statBooked").length) $("#statBooked").text(counts.booked);
 			if ($("#statSold").length) $("#statSold").text(counts.sold);
 
 			if ($("#countAll").length) $("#countAll").text(totalRecords);
-			if ($("#countAvailable").length) $("#countAvailable").text(counts.available);
+			if ($("#countAvailable").length)
+				$("#countAvailable").text(counts.available);
 			if ($("#countBooked").length) $("#countBooked").text(counts.booked);
 			if ($("#countSold").length) $("#countSold").text(counts.sold);
 
@@ -1059,27 +1260,31 @@ $(document).ready(function () {
 						let gridCards = "";
 
 						$.each(res.data, function (i, plot) {
+							const statusKey = normalizePlotStatus(plot.status);
+							const statusBadge = buildStatusBadge(statusKey);
+							const rowNo = (page - 1) * 10 + i + 1;
 
-	const statusKey = normalizePlotStatus(plot.status);
-	const statusBadge = buildStatusBadge(statusKey);
-	const rowNo = (page - 1) * 10 + i + 1;
+							// ✅ FIXED — correct fields
+							const buyerName = String(plot.buyer_name || "").trim();
+							const buyerId = plot.buyer_id || "";
 
-	// ✅ FIXED — correct fields
-	const buyerName = String(plot.buyer_name || "").trim();
-	const buyerId   = plot.buyer_id || "";
+							const hasBuyer =
+								statusKey === "sold" &&
+								buyerName.length > 0 &&
+								String(buyerId).trim().length > 0;
 
-	const hasBuyer = statusKey === "sold" && buyerName.length > 0;
+							const safeBuyerName = escapeHtml(buyerName || "-");
+							const pendingInstallmentRequests =
+								parseInt(plot.pending_installment_requests || 0, 10) || 0;
 
-	const safeBuyerName = escapeHtml(buyerName || "-");
-
-	const buyerHtml = hasBuyer
-		? `<div class="buyer-cell">
+							const buyerHtml = hasBuyer
+								? `<div class="buyer-cell">
 				<div class="buyer-avatar" style="background:#4f46e5;">
 					${escapeHtml(getBuyerInitials(buyerName))}
 				</div>
 				<div class="buyer-name">${safeBuyerName}</div>
 		   </div>`
-		: '<span class="no-buyer">-</span>';
+								: '<span class="no-buyer">-</span>';
 
 							const safePlotNumber = escapeHtml(plot.plot_number || "-");
 							const safeSize = escapeHtml(plot.size || "-");
@@ -1113,15 +1318,7 @@ $(document).ready(function () {
 			<i class="bx bx-trash"></i>
 		</a>
 
-		${
-			hasBuyer
-				? `<a href="${site_url}plots/buyer_details/${plot.id}"
-					  class="btn-action btn-action-view"
-					  data-tooltip="Buyer Details">
-						<i class="bx bx-user-pin"></i>
-				   </a>`
-				: ""
-		}
+
 
 	</div>
 </td>
@@ -1166,14 +1363,7 @@ $(document).ready(function () {
 		<i class="bx bx-trash"></i>
 	</a>
 
-	${
-		hasBuyer
-			? `<a href="${site_url}plots/buyer_details/${plot.id}"
-				  class="btn-action btn-action-view">
-					<i class="bx bx-user-pin"></i>
-			   </a>`
-			: ""
-	}
+
 
 </div>
 
@@ -1216,7 +1406,12 @@ $(document).ready(function () {
 			const cleaned = String(value).trim();
 			if (!cleaned) return null;
 			const lowered = cleaned.toLowerCase();
-			if (lowered === "null" || lowered === "na" || lowered === "n/a" || lowered === "-") {
+			if (
+				lowered === "null" ||
+				lowered === "na" ||
+				lowered === "n/a" ||
+				lowered === "-"
+			) {
 				return null;
 			}
 			return cleaned;
@@ -1226,7 +1421,12 @@ $(document).ready(function () {
 			const cleaned = normalizeImportedValue(value);
 			if (cleaned === null) return null;
 			const numberLike = cleaned.replace(/[^0-9.\-]/g, "");
-			if (!numberLike || numberLike === "-" || numberLike === "." || numberLike === "-.") {
+			if (
+				!numberLike ||
+				numberLike === "-" ||
+				numberLike === "." ||
+				numberLike === "-."
+			) {
 				return null;
 			}
 			const n = Number(numberLike);
@@ -1235,26 +1435,35 @@ $(document).ready(function () {
 
 		function normalizeImportedStatus(value) {
 			const cleaned = normalizeImportedValue(value);
-			if (!cleaned) return "available";
+			if (!cleaned) return null;
 			const status = cleaned.toLowerCase();
 			if (status === "sold") return "sold";
-			if (status === "booked" || status === "reserved" || status === "pending") {
-				return "booked";
+			if (
+				status === "booked" ||
+				status === "reserved" ||
+				status === "pending"
+			) {
+				return "pending";
 			}
-			return "available";
+			if (status === "available") return "available";
+			return status;
 		}
 
 		function getMappedImportRow(rawRow) {
 			const mapped = {
+				site_name: null,
 				plot_number: null,
 				size: null,
 				dimension: null,
 				facing: null,
 				price: null,
-				status: "available",
+				status: null,
 			};
 
 			const headerMap = {
+				sitename: "site_name",
+				site: "site_name",
+				projectname: "site_name",
 				plotnumber: "plot_number",
 				plotno: "plot_number",
 				plot: "plot_number",
@@ -1294,11 +1503,13 @@ $(document).ready(function () {
 			});
 
 			const hasAnyValue =
+				mapped.site_name !== null ||
 				mapped.plot_number !== null ||
 				mapped.size !== null ||
 				mapped.dimension !== null ||
 				mapped.facing !== null ||
-				mapped.price !== null;
+				mapped.price !== null ||
+				mapped.status !== null;
 
 			return hasAnyValue ? mapped : null;
 		}
@@ -1369,7 +1580,11 @@ $(document).ready(function () {
 			if (!file) return;
 
 			if (typeof XLSX === "undefined") {
-				Swal.fire("Error", "Excel library is not loaded. Please refresh and try again.", "error");
+				Swal.fire(
+					"Error",
+					"Excel library is not loaded. Please refresh and try again.",
+					"error",
+				);
 				$(this).val("");
 				return;
 			}
@@ -1408,14 +1623,14 @@ $(document).ready(function () {
 					if (rows.length === 0) {
 						Swal.fire(
 							"Error",
-							"No valid rows found. Use headers like plot_number, size, dimension, facing, price, status.",
+							"No valid rows found. Use headers: site_name, plot_number, size, dimension, facing, price, status.",
 							"error",
 						);
 						return;
 					}
 
 					$.ajax({
-						url: site_url + "plots/import_plots",
+						url: site_url + "plots/import",
 						type: "POST",
 						dataType: "json",
 						data: {
@@ -1433,19 +1648,57 @@ $(document).ready(function () {
 						success: function (res) {
 							Swal.close();
 							if (res.status === "success") {
-								const msg = `Inserted: ${res.inserted || 0}\nSkipped Duplicates: ${
-									res.skipped_duplicates || 0
-								}\nSkipped Empty: ${res.skipped_empty || 0}`;
+								const msg = `Inserted: ${res.inserted || 0}`;
 								Swal.fire("Success", msg, "success");
 								currentPage = 1;
 								loadPlots(currentPage, searchQuery);
 							} else {
-								Swal.fire("Error", res.message || "Import failed.", "error");
+								const issues = Array.isArray(res.errors) ? res.errors : [];
+								if (issues.length) {
+									const shown = issues.slice(0, 20);
+									const escapedItems = shown.map((item) =>
+										String(item)
+											.replace(/&/g, "&amp;")
+											.replace(/</g, "&lt;")
+											.replace(/>/g, "&gt;"),
+									);
+									const moreCount = issues.length - shown.length;
+
+									const html = `
+										<div style="text-align:left;">
+											<div style="margin-bottom:10px;">${res.message || "Import failed. Please fix the rows below."}</div>
+											<div style="max-height:280px; overflow:auto; border:1px solid #e5e7eb; border-radius:8px; padding:10px; background:#f9fafb;">
+												<ol style="margin:0; padding-left:18px;">
+													${escapedItems.map((item) => `<li style="margin-bottom:6px;">${item}</li>`).join("")}
+												</ol>
+											</div>
+											${moreCount > 0 ? `<div style="margin-top:8px; font-size:12px; color:#6b7280;">Showing first ${shown.length} errors. ${moreCount} more error(s) in console.</div>` : ""}
+											${res.error_count && res.error_count > shown.length ? `<div style="margin-top:4px; font-size:12px; color:#6b7280;">Total validation errors: ${res.error_count}</div>` : ""}
+										</div>
+									`;
+
+									if (moreCount > 0) {
+										console.log("Import validation errors:", issues);
+									}
+
+									Swal.fire({
+										icon: "error",
+										title: "Import Failed",
+										html: html,
+										width: 640,
+									});
+								} else {
+									Swal.fire("Error", res.message || "Import failed.", "error");
+								}
 							}
 						},
 						error: function () {
 							Swal.close();
-							Swal.fire("Error", "Something went wrong while importing.", "error");
+							Swal.fire(
+								"Error",
+								"Something went wrong while importing.",
+								"error",
+							);
 						},
 						complete: function () {
 							$("#importPlotsFile").val("");
@@ -1493,11 +1746,31 @@ $(document).ready(function () {
 	if ($("#userTable").length) {
 		let currentPage = 1;
 		let searchQuery = "";
+		let activeFilter = "all";
 
-		// âœ… Fetch users with pagination + search
+		function formatMoney(value) {
+			const num = Number(value || 0);
+			return num.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+		}
+
+		function applyUserFilter(filter) {
+			activeFilter = filter || "all";
+			let hasVisible = false;
+
+			$("#userTable tr").each(function () {
+				const status = String($(this).data("status") || "").toLowerCase();
+				const show = activeFilter === "all" || status === activeFilter;
+				$(this).toggle(show);
+				if (show) hasVisible = true;
+			});
+
+			$("#usrEmptyState").toggleClass("d-none", hasVisible);
+		}
+
 		function loadUsers(page = 1, search = "") {
+			currentPage = page;
 			$.ajax({
-				url: site_url + "user/get_users_ajax", // <-- your backend endpoint
+				url: site_url + "user/get_users_ajax",
 				method: "GET",
 				data: { page: page, search: search },
 				success: function (response) {
@@ -1508,36 +1781,33 @@ $(document).ready(function () {
 						let rows = "";
 
 						$.each(res.data, function (i, user) {
-							const statusBadge =
-								user.isActive == 1
-									? '<div class="badge rounded-pill text-success bg-light-success p-2 text-uppercase px-3"><i class="bx bxs-circle me-1"></i>Active</div>'
-									: '<div class="badge rounded-pill text-danger bg-light-danger p-2 text-uppercase px-3"><i class="bx bxs-circle me-1"></i>Inactive</div>';
-
+							const isActive = Number(user.isActive) === 1;
+							const userStatus = isActive ? "active" : "inactive";
+							const statusBadge = isActive
+								? '<span class="usr-status usr-status--active">Active</span>'
+								: '<span class="usr-status usr-status--inactive">Inactive</span>';
 							const profileImage = user.profile_image
 								? `<img src="${site_url + user.profile_image}" width="40" height="40" class="rounded-circle">`
 								: `<img src="${site_url}assets/images/default-user.png" width="40" height="40" class="rounded-circle">`;
 
 							rows += `
-                <tr>
+                <tr data-id="${user.id}"
+                    data-status="${userStatus}"
+                    data-name="${user.name || "-"}"
+                    data-email="${user.email || "-"}"
+                    data-mobile="${user.mobile || "-"}"
+                    data-image="${user.profile_image ? site_url + user.profile_image : ""}">
                   <td>${(page - 1) * 10 + i + 1}</td>
                   <td>${user.name || "-"}</td>
                   <td>${user.mobile || "-"}</td>
                   <td>${user.email || "-"}</td>
                   <td>${profileImage}</td>
                   <td>${statusBadge}</td>
-<td>${user.actual_salary_text}</td>
-<td>${user.total_upad || "-"}</td>
-<td>${user.payable_salary}</td>
-
-
-
-                  <td>
-                    <div class="d-flex order-actions">
-                      <a href="${site_url}edit_user/${user.id}" class="text"><i class="bx bxs-edit"></i></a>
-                      <a href="javascript:;" class="ms-3 text deleteUser" data-id="${user.id}"><i class="bx bxs-trash"></i></a>
-                       <a href="${site_url}user/view_upad/${user.id}" class="text-primary">
-            <i class="bx bx-show"></i>
-        </a>
+                  <td class="text-center">
+                    <div class="usr-actions">
+                      <button class="usr-action-btn usr-action-btn--view viewUserDetail" title="View Profile"><i class="bx bx-show"></i></button>
+                      <a href="${site_url}user/edit_user/${user.id}" class="usr-action-btn usr-action-btn--edit" title="Edit"><i class="bx bxs-edit"></i></a>
+                      <a href="javascript:;" class="usr-action-btn usr-action-btn--delete deleteUser" data-id="${user.id}" title="Delete"><i class="bx bxs-trash"></i></a>
                     </div>
                   </td>
                 </tr>
@@ -1545,21 +1815,46 @@ $(document).ready(function () {
 						});
 
 						$("#userTable").html(rows);
+						applyUserFilter(activeFilter);
 						renderPagination(
 							res.pagination.total_pages,
 							res.pagination.current_page,
 						);
+						const activeUsers = res.data.filter(
+							(u) => Number(u.isActive) === 1,
+						).length;
+						const totalSalary = res.data.reduce(
+							(sum, u) => sum + Number(u.actual_salary || 0),
+							0,
+						);
+						const totalPayable = res.data.reduce(
+							(sum, u) => sum + Number(u.payable_salary || 0),
+							0,
+						);
+						$("#statTotalUsers").text(res.data.length);
+						$("#statActiveUsers").text(activeUsers);
+						$("#statTotalSalary").text(formatMoney(totalSalary));
+						$("#statTotalPayable").text(formatMoney(totalPayable));
+
+						const start = (res.pagination.current_page - 1) * 10 + 1;
+						const end = start + res.data.length - 1;
+						$("#usrPaginationInfo").text(`Showing ${start}-${end} users`);
 					} else {
 						$("#userTable").html(
-							`<tr><td colspan="7" class="text-center text-muted">No users found</td></tr>`,
+							`<tr><td colspan="10" class="text-center text-muted">No users found</td></tr>`,
 						);
 						$(".pagination").html("");
+						$("#usrPaginationInfo").text("No users found");
+						$("#usrEmptyState").removeClass("d-none");
+						$("#statTotalUsers").text("0");
+						$("#statActiveUsers").text("0");
+						$("#statTotalSalary").text("0");
+						$("#statTotalPayable").text("0");
 					}
 				},
 			});
 		}
 
-		// âœ… Render pagination (3 visible + Last + Next)
 		function renderPagination(totalPages, currentPage) {
 			let paginationHTML = "";
 			const maxVisible = 3;
@@ -1572,39 +1867,56 @@ $(document).ready(function () {
 
 			paginationHTML += `
         <li class="page-item ${currentPage === 1 ? "disabled" : ""}">
-          <a class="page-link" href="javascript:;" onclick="loadUsers(${currentPage - 1}, '${searchQuery}')">Previous</a>
+          <a class="page-link usr-page-link" href="javascript:;" data-page="${currentPage - 1}">Previous</a>
         </li>
       `;
 
 			for (let i = startPage; i <= endPage; i++) {
 				paginationHTML += `
           <li class="page-item ${i === currentPage ? "active" : ""}">
-            <a class="page-link" href="javascript:;" onclick="loadUsers(${i}, '${searchQuery}')">${i}</a>
+            <a class="page-link usr-page-link" href="javascript:;" data-page="${i}">${i}</a>
           </li>`;
 			}
 
 			if (endPage < totalPages) {
 				paginationHTML += `
-          <li class="page-item"><a class="page-link" href="javascript:;" onclick="loadUsers(${totalPages}, '${searchQuery}')">Last</a></li>
+          <li class="page-item"><a class="page-link usr-page-link" href="javascript:;" data-page="${totalPages}">Last</a></li>
         `;
 			}
 
 			paginationHTML += `
         <li class="page-item ${currentPage === totalPages ? "disabled" : ""}">
-          <a class="page-link" href="javascript:;" onclick="loadUsers(${currentPage + 1}, '${searchQuery}')">Next</a>
+          <a class="page-link usr-page-link" href="javascript:;" data-page="${currentPage + 1}">Next</a>
         </li>
       `;
 
 			$(".pagination").html(paginationHTML);
 		}
 
-		// âœ… Search functionality
+		$(document).on("click", ".usr-page-link", function () {
+			const page = Number($(this).data("page") || 1);
+			if (page < 1 || $(this).closest(".page-item").hasClass("disabled"))
+				return;
+			loadUsers(page, searchQuery);
+		});
+
 		$("#serchUser").on("keyup", function () {
 			searchQuery = $(this).val();
 			loadUsers(1, searchQuery);
 		});
 
-		// âœ… Delete user confirmation
+		$(".usr-filter-chip").on("click", function () {
+			$(".usr-filter-chip").removeClass("active");
+			$(this).addClass("active");
+			applyUserFilter($(this).data("filter"));
+		});
+		$(".usr-add-btn").on("click", function () {
+			window.location.href = site_url + "user/add_user";
+		});
+		$(".usr-add-upad-btn").on("click", function () {
+			window.location.href = site_url + "add_upad";
+		});
+
 		$(document).on("click", ".deleteUser", function () {
 			const id = $(this).data("id");
 
@@ -1629,7 +1941,6 @@ $(document).ready(function () {
 			});
 		});
 
-		// âœ… Initial Load
 		loadUsers();
 	}
 });
@@ -1638,29 +1949,75 @@ $(document).ready(function () {
 	// Run only when upad table exists
 	if ($("#upad_table").length === 0) return;
 
-	let user_id = $("#user_id").val();
-	// let admin_id = "<?= $this->admin['user_id'] ?>";
+	const user_id = $("#user_id").val();
+	const $pagination = $(".upad-pagination").length
+		? $(".upad-pagination")
+		: $(".pagination");
 
 	let allData = [];
+	let filteredData = [];
 	let currentPage = 1;
-	let perPage = 10;
+	const perPage = 10;
+
+	function formatInr(value) {
+		const amount = Number(value || 0);
+		return (
+			"INR " + amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })
+		);
+	}
+
+	function formatDateTime(value) {
+		if (!value) return "-";
+		const dt = new Date(String(value).replace(" ", "T"));
+		if (isNaN(dt.getTime())) return value;
+		return dt.toLocaleString("en-IN", {
+			day: "2-digit",
+			month: "short",
+			year: "numeric",
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+	}
+
+	function getInitials(name) {
+		const clean = String(name || "").trim();
+		return clean ? clean.charAt(0).toUpperCase() : "U";
+	}
+
+	function escapeHtml(value) {
+		return String(value ?? "")
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#039;");
+	}
+
+	function updateStats(data) {
+		const rows = Array.isArray(data) ? data : [];
+		const count = rows.length;
+		const totalAmount = rows.reduce(
+			(sum, row) => sum + Number(row.amount || 0),
+			0,
+		);
+		const latestDate = rows.length ? formatDateTime(rows[0].created_at) : "-";
+
+		$("#upadStatCount").text(count);
+		$("#upadStatAmount").text(formatInr(totalAmount));
+		$("#upadStatLatest").text(latestDate);
+	}
 
 	function loadUpad() {
+		const month_year = $("#upadMonthPicker").val() || "";
 		$.ajax({
 			url: site_url + "user/get_user_upads",
 			type: "POST",
-			data: { user_id },
+			data: { user_id, month_year },
 			success: function (res) {
 				let response = typeof res === "string" ? JSON.parse(res) : res;
-
-				if (response.status === false || response.data.length === 0) {
-					$("#upad_table").html(`
-                        <tr><td colspan="6" class="text-center">No UPAD Records Found</td></tr>
-                    `);
-					return;
-				}
-
-				allData = response.data;
+				allData = Array.isArray(response.data) ? response.data : [];
+				filteredData = [...allData];
+				updateStats(allData);
 				renderTable();
 			},
 		});
@@ -1671,29 +2028,55 @@ $(document).ready(function () {
 		let start = (currentPage - 1) * perPage;
 		let end = start + perPage;
 
-		let sliced = allData.slice(start, end);
+		let sliced = filteredData.slice(start, end);
 		let html = "";
 
+		if (!sliced.length) {
+			$("#upad_table").html(`
+				<tr>
+					<td colspan="6">
+						<div class="upad-empty">
+							<i class="bx bx-folder-open"></i>
+							<h6>No UPAD Records Found</h6>
+							<p>Try a different search or add a new UPAD entry.</p>
+						</div>
+					</td>
+				</tr>
+			`);
+			$pagination.html("");
+			return;
+		}
+
 		sliced.forEach((r, i) => {
+			const rawName = r.user_name || "User";
+			const safeName = escapeHtml(rawName);
+			const safeNotes = escapeHtml(r.notes || "");
+			const noteText = safeNotes
+				? `<span class="upad-note">${safeNotes}</span>`
+				: `<span class="upad-note upad-note--empty">No notes</span>`;
+
 			html += `
                 <tr>
-                    <td>${start + i + 1}</td>
-                    <td>${r.user_name}</td>
-                    <td>â‚¹${r.amount}</td>
-                    <td>${r.created_at}</td>
-                    <td>${r.notes ?? ""}</td>
-                   <td>
-    <div class="d-flex order-actions">
-        <a href="javascript:;" class="editUpad" data-id="${r.id}">
-            <i class="bx bxs-edit"></i>
-        </a>
-
-        <a href="javascript:;" class="ms-3 deleteUpad" data-id="${r.id}">
-            <i class="bx bxs-trash"></i>
-        </a>
-    </div>
-</td>
-
+                    <td><span class="upad-index">${start + i + 1}</span></td>
+                    <td>
+						<div class="upad-user">
+							<span class="upad-user__avatar">${getInitials(rawName)}</span>
+							<span class="upad-user__name">${safeName}</span>
+						</div>
+					</td>
+                    <td><span class="upad-amount">${formatInr(r.amount)}</span></td>
+                    <td><span class="upad-date">${formatDateTime(r.created_at)}</span></td>
+                    <td>${noteText}</td>
+                    <td>
+						<div class="upad-actions">
+							<a href="javascript:;" class="upad-action-btn upad-action-btn--edit editUpad" data-id="${r.id}" title="Edit">
+								<i class="bx bxs-edit"></i>
+							</a>
+							<a href="javascript:;" class="upad-action-btn upad-action-btn--delete deleteUpad" data-id="${r.id}" title="Delete">
+								<i class="bx bxs-trash"></i>
+							</a>
+						</div>
+					</td>
                 </tr>
             `;
 		});
@@ -1704,7 +2087,11 @@ $(document).ready(function () {
 
 	// Pagination logic (3 buttons + next / prev)
 	function renderPagination() {
-		let totalPages = Math.ceil(allData.length / perPage);
+		let totalPages = Math.ceil(filteredData.length / perPage);
+		if (totalPages <= 1) {
+			$pagination.html("");
+			return;
+		}
 		let html = "";
 
 		// Prev
@@ -1728,7 +2115,7 @@ $(document).ready(function () {
                     <a class="page-link nextPage" href="javascript:;">Next</a>
                  </li>`;
 
-		$(".pagination").html(html);
+		$pagination.html(html);
 	}
 
 	// Pagination click
@@ -1745,7 +2132,7 @@ $(document).ready(function () {
 	});
 
 	$(document).on("click", ".nextPage", function () {
-		let totalPages = Math.ceil(allData.length / perPage);
+		let totalPages = Math.ceil(filteredData.length / perPage);
 		if (currentPage < totalPages) {
 			currentPage++;
 			renderTable();
@@ -1756,16 +2143,35 @@ $(document).ready(function () {
 	$("#serchupad").on("keyup", function () {
 		let q = $(this).val().toLowerCase();
 
-		let filtered = allData.filter(
+		filteredData = allData.filter(
 			(x) =>
-				x.user_name.toLowerCase().includes(q) ||
+				String(x.user_name || "")
+					.toLowerCase()
+					.includes(q) ||
 				x.amount.toString().includes(q) ||
 				(x.notes ?? "").toLowerCase().includes(q),
 		);
 
-		allData = filtered;
 		currentPage = 1;
 		renderTable();
+	});
+
+	function setDefaultCurrentMonth() {
+		const $month = $("#upadMonthPicker");
+		if ($month.length === 0) return;
+		if ($month.val()) return;
+
+		const now = new Date();
+		const yyyy = now.getFullYear();
+		const mm = String(now.getMonth() + 1).padStart(2, "0");
+		$month.val(`${yyyy}-${mm}`);
+	}
+
+	setDefaultCurrentMonth();
+
+	$("#upadMonthPicker").on("change", function () {
+		currentPage = 1;
+		loadUpad();
 	});
 
 	// Initial Load
@@ -1871,6 +2277,7 @@ $(document).ready(function () {
 					$("#expensesTable").html(
 						'<tr><td colspan="9" class="text-center text-danger fw-bold py-3">Failed to load records</td></tr>',
 					);
+					$("#emptyState").addClass("d-none");
 					buildPagination(0, 10, 1);
 					updateExpenseSummary({});
 					return;
@@ -1879,16 +2286,11 @@ $(document).ready(function () {
 
 				$("#expensesTable").html("");
 				if (res.records.length === 0) {
-					$("#expensesTable").html(`
-        <tr>
-            <td colspan="9" class="text-center text-danger fw-bold py-3">
-                No Record Found
-            </td>
-        </tr>
-    `);
+					$("#emptyState").removeClass("d-none");
 					buildPagination(0, res.limit, res.page);
 					return;
 				}
+				$("#emptyState").addClass("d-none");
 
 				let indexStart = (page - 1) * 10 + 1;
 
@@ -2044,17 +2446,34 @@ $(document).ready(function () {
 	// âž¤ Click pagination
 	$(document)
 		.off("click.expensePagination", "#expensePaginationList .page-link")
-		.on("click.expensePagination", "#expensePaginationList .page-link", function (e) {
-			e.preventDefault();
-			let p = $(this).data("page");
-			if (p) {
-				currentPage = p;
-				loadExpenses(p);
-			}
-		});
+		.on(
+			"click.expensePagination",
+			"#expensePaginationList .page-link",
+			function (e) {
+				e.preventDefault();
+				let p = $(this).data("page");
+				if (p) {
+					currentPage = p;
+					loadExpenses(p);
+				}
+			},
+		);
 
 	// âž¤ Search
 	$("#serchexp").keyup(function () {
+		currentPage = 1;
+		loadExpenses(1);
+	});
+
+	$("#serchexp").on("keydown", function (e) {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			currentPage = 1;
+			loadExpenses(1);
+		}
+	});
+
+	$("#expSearchBtn").on("click", function () {
 		currentPage = 1;
 		loadExpenses(1);
 	});
@@ -2321,375 +2740,601 @@ $(document).on("shown.bs.modal", "#siteImageModal", function () {
 });
 
 $(document).ready(function () {
-	if (!document.getElementById("inquiryTableBody")) return;
+	if (!$("#attedanceTableBody").length) return;
 
 	let currentPage = 1;
+	let currentSearch = "";
+	let defaultAttendanceMonth = "";
 
-	function loadInquiries(page = 1, search = "") {
-		$.ajax({
-			url: site_url + "dashboard/fetch_inquiries",
-			type: "POST",
-			data: { page: page, search: search },
-			dataType: "json",
-			success: function (res) {
-				let tbody = "";
-
-				// If NO DATA, show message
-				if (!res.data || res.data.length === 0) {
-					tbody = `
-                    <tr>
-                        <td colspan="9" class="text-center text-danger fw-bold">
-                            No Record Found
-                        </td>
-                    </tr>`;
-					$("#inquiryTableBody").html(tbody);
-					renderPagination(0, res.limit, res.page);
-					return;
-				}
-
-				res.data.forEach((row, index) => {
-					// Safe note handling
-					let note = row.note ? row.note : "";
-
-					// Short note
-					let shortNote =
-						note.length > 20 ? note.substring(0, 20) + "..." : note;
-
-					// Format date only (YYYY-MM-DD)
-					let formattedDate = row.created_at
-						? row.created_at.split(" ")[0]
-						: "";
-
-					tbody += `
-                    <tr>
-                        <td>${index + 1}</td>
-                        <td>${row.user_name}</td>
-                        <td>${row.name}</td>
-                        <td>${row.plot_number}</td>
-                        <td>${row.customer_name}</td>
-                        <td>${row.mobile}</td>
-
-                        <td title="${note}">${shortNote}</td>
-
-                        <td>${formattedDate}</td>
-
-                        <td>
-                            <div class="d-flex order-actions">
-                                <a href="javascript:;" 
-                                   class="ms-3 deleteInquiry" 
-                                   data-id="${row.id}">
-                                    <i class="bx bxs-trash text-danger fs-5"></i>
-                                </a>
-                            </div>
-                        </td>
-                    </tr>`;
-				});
-
-				$("#inquiryTableBody").html(tbody);
-				renderPagination(res.total, res.limit, res.page);
-			},
-		});
+	function esc(v) {
+		return String(v ?? "")
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#39;");
 	}
 
-	function renderPagination(total, limit, page) {
-		let totalPages = Math.ceil(total / limit);
-		let html = "";
+	function getStatusUI(status) {
+		const s = String(status || "").toLowerCase();
+		let color = "text-muted";
+		let label = s ? s.charAt(0).toUpperCase() + s.slice(1) : "Unknown";
+		if (s === "pending") color = "text-warning";
+		if (s === "present") color = "text-success";
+		if (s === "absent" || s === "rejected") color = "text-danger";
 
-		// Previous
-		html += `<li class="page-item ${page === 1 ? "disabled" : ""}">
-                    <a class="page-link" href="#" data-page="${page - 1}">Previous</a>
-                </li>`;
+		return `<div class="d-flex align-items-center ${color}">
+			<i class="bx bx-radio-circle-marked bx-burst bx-rotate-90 align-middle font-18 me-1"></i>
+			<span>${label}</span>
+		</div>`;
+	}
 
-		// Show only 3 numbers
-		let start = Math.max(1, page - 1);
-		let end = Math.min(totalPages, start + 2);
-
-		for (let i = start; i <= end; i++) {
-			html += `<li class="page-item ${page === i ? "active" : ""}">
-                        <a class="page-link" href="#" data-page="${i}">${i}</a>
-                    </li>`;
+	function updateStats(rows, stats) {
+		if (stats) {
+			$("#totalEmployees").text(Number(stats.total_employees || 0));
+			$("#presentToday").text(Number(stats.present_today || 0));
+			$("#lateArrivals").text(Number(stats.late_arrivals || 0));
+			$("#absentToday").text(Number(stats.absent_today || 0));
+			return;
 		}
 
-		// Next
-		html += `<li class="page-item ${page === totalPages ? "disabled" : ""}">
-                    <a class="page-link" href="#" data-page="${page + 1}">Next</a>
-                </li>`;
-
-		$(".pagination").html(html);
+		$("#totalEmployees").text(rows.length || 0);
+		$("#presentToday").text(0);
+		$("#lateArrivals").text(0);
+		$("#absentToday").text(0);
 	}
 
-	// Pagination Click
-	$(document).on("click", ".page-link", function () {
-		let page = $(this).data("page");
-		if (!page || page < 1) return;
+	function getAttendanceFilters() {
+		const monthVal = ($("#dateFilter").val() || "").trim();
+		return {
+			date_filter: monthVal,
+			month_filter: monthVal,
+			status_filter: ($("#statusFilter").val() || "").toLowerCase().trim(),
+		};
+	}
 
+	function setDefaultAttendanceMonth() {
+		const d = new Date();
+		const yyyy = d.getFullYear();
+		const mm = String(d.getMonth() + 1).padStart(2, "0");
+		defaultAttendanceMonth = `${yyyy}-${mm}`;
+		if (!$("#dateFilter").val()) {
+			$("#dateFilter").val(defaultAttendanceMonth);
+		}
+	}
+
+	function toggleShowAllButton() {
+		const filters = getAttendanceFilters();
+		const hasMonthOverride =
+			!!filters.month_filter && filters.month_filter !== defaultAttendanceMonth;
+		const hasFilters =
+			hasMonthOverride || !!filters.status_filter || !!currentSearch.trim();
+		$("#showAllAttendanceBtn").toggleClass("d-none", !hasFilters);
+	}
+
+	function renderAttendancePagination(total, limit, page) {
+		let totalPages = Math.ceil(total / limit);
+		if (!totalPages || totalPages < 1) totalPages = 1;
+
+		let html = `<li class="page-item ${page === 1 ? "disabled" : ""}">
+			<a class="page-link att-page-link" href="javascript:;" data-page="${page - 1}">Previous</a>
+		</li>`;
+
+		const start = Math.max(1, page - 1);
+		const end = Math.min(totalPages, start + 2);
+		for (let i = start; i <= end; i++) {
+			html += `<li class="page-item ${i === page ? "active" : ""}">
+				<a class="page-link att-page-link" href="javascript:;" data-page="${i}">${i}</a>
+			</li>`;
+		}
+
+		html += `<li class="page-item ${page === totalPages ? "disabled" : ""}">
+			<a class="page-link att-page-link" href="javascript:;" data-page="${page + 1}">Next</a>
+		</li>`;
+
+		$("#attendancePagination").html(html);
+	}
+
+	function loadAttendance(page = 1, search = null) {
 		currentPage = page;
-		loadInquiries(page, $("#serchinquiry").val());
-	});
+		if (search !== null) {
+			currentSearch = search;
+		}
+		const filters = getAttendanceFilters();
+		toggleShowAllButton();
+		$("#loadingState").removeClass("d-none");
 
-	// Search
-	$("#serchinquiry").on("keyup", function () {
-		let keyword = $(this).val();
-		loadInquiries(1, keyword);
-	});
-
-	// Initial Load
-	loadInquiries();
-	// DELETE INQUIRY (SOFT DELETE)
-	$(document).on("click", ".deleteInquiry", function () {
-		let id = $(this).data("id");
-
-		Swal.fire({
-			title: "Are you sure?",
-			text: "This inquiry will be marked as inactive.",
-			icon: "warning",
-			showCancelButton: true,
-			confirmButtonColor: "#3085d6",
-			cancelButtonColor: "#d33",
-			confirmButtonText: "Yes, Delete",
-		}).then((result) => {
-			if (result.isConfirmed) {
-				$.ajax({
-					url: site_url + "dashboard/delete_inquiry",
-					type: "POST",
-					data: { id: id },
-					dataType: "json",
-
-					success: function (res) {
-						if (res.status) {
-							Swal.fire("Deleted!", res.message, "success");
-							loadInquiries(1, $("#serchinquiry").val()); // reload list
-						} else {
-							Swal.fire("Error", res.message, "error");
-						}
-					},
-				});
-			}
-		});
-	});
-});
-// Run only if the table exists
-if ($("#attedanceTableBody").length) {
-	function loadAttendance(page = 1, search = "") {
 		$.ajax({
 			url: site_url + "dashboard/fetch_attendance",
 			type: "POST",
-			data: { page: page, search: search },
+			data: {
+				page: page,
+				search: currentSearch,
+				date_filter: filters.date_filter,
+				month_filter: filters.month_filter,
+				status_filter: filters.status_filter,
+			},
 			dataType: "json",
 			success: function (res) {
 				let tbody = "";
+				$("#loadingState").addClass("d-none");
 
-				if (res.data.length === 0) {
-					tbody = `<tr><td colspan="7" class="text-center text-danger">No Record Found</td></tr>`;
-					$("#attedanceTableBody").html(tbody);
-					$(".pagination").html("");
+				if (!res.data || res.data.length === 0) {
+					$("#attedanceTableBody").html("");
+					$("#totalRecords").text("0");
+					$("#attendancePagination").html("");
+					updateStats([], res.stats || null);
+					$("#emptyState").removeClass("d-none");
+					toggleShowAllButton();
 					return;
 				}
 
 				res.data.forEach((row, index) => {
-					let dt = row.attendance_time ? row.attendance_time : "";
+					const dt = row.attendance_time ? row.attendance_time : "";
+					const dateOnly = dt ? dt.split(" ")[0] : "";
+					const status = String(row.status || "").toLowerCase();
 
-					function getStatusUI(status) {
-						let color = "";
-						let label = status.charAt(0).toUpperCase() + status.slice(1); // Capitalize
-
-						if (status === "pending") color = "text-warning";
-						if (status === "present") color = "text-success";
-						if (status === "absent") color = "text-danger";
-						if (status === "rejected") color = "text-danger";
-
-						return `
-        <div class="d-flex align-items-center ${color}">
-            <i class="bx bx-radio-circle-marked bx-burst bx-rotate-90 align-middle font-18 me-1"></i>
-            <span>${label}</span>
-        </div>`;
-					}
-
-					tbody += `
-<tr>
-    <td>${index + 1}</td>
-    <td>${row.user_name}</td>
-    <td>
-        <img src="${row.image_path}" width="60" height="60" class="rounded">
-    </td>
-
-    <td>${dt}</td>
-
-    <td>
-        ${getStatusUI(row.status)}
-    </td>
-
-    <td>${row.mobile}</td>
-
-    <td>
-        <div class="d-flex order-actions gap-2">
-
-            <!-- DELETE BUTTON -->
-            <a href="javascript:;" 
-               class="ms-3 text deleteAttendance"  
-               data-id="${row.id}">
-               <i class="bx bxs-trash"></i>
-            </a>
-                  <!-- STATUS DROPDOWN -->
-            <div class="dropdown">
-    <a href="javascript:;" class="text-dark" data-bs-toggle="dropdown">
-        <i class="bx bx-dots-vertical-rounded font-20"></i>
-    </a>
-
-    <ul class="dropdown-menu dropdown-menu-end">
-        <li>
-            <a class="dropdown-item changeStatus" data-id="${row.id}" data-status="present">
-                <i class="bx bx-check-circle me-2 text-success"></i> Present
-            </a>
-        </li>
-
-        <li>
-            <a class="dropdown-item changeStatus" data-id="${row.id}" data-status="absent">
-                <i class="bx bx-x-circle me-2 text-danger"></i> Absent
-            </a>
-        </li>
-
-        <li>
-            <a class="dropdown-item changeStatus" data-id="${row.id}" data-status="rejected">
-                <i class="bx bx-block me-2 text-danger"></i> Rejected
-            </a>
-        </li>
-    </ul>
-</div>
-            </div>
-            
-      
-            
-    </td>
-</tr>`;
+					const imagePath = esc(row.image_path || "");
+					tbody += `<tr data-date="${esc(dateOnly)}" data-status="${esc(status)}">
+						<td>${(page - 1) * (res.limit || 10) + index + 1}</td>
+						<td>${esc(row.user_name || "-")}</td>
+						<td>
+							${
+								imagePath
+									? `<img src="${imagePath}" class="attendance-photo-thumb attendancePhotoPreview" data-full="${imagePath}" alt="Attendance Photo">`
+									: "-"
+							}
+						</td>
+						<td>${esc(dt)}</td>
+						<td>${getStatusUI(status)}</td>
+						<td>${esc(row.mobile || "-")}</td>
+						<td>
+							<div class="d-flex justify-content-center align-items-center gap-2 attendance-action-wrap">
+								<button type="button" class="btn action-btn action-btn-delete deleteAttendance" data-id="${row.id}" title="Delete">
+									<i class="bx bxs-trash"></i>
+								</button>
+								<div class="dropdown">
+									<button type="button" class="btn action-btn action-btn-menu" data-bs-toggle="dropdown" aria-expanded="false" title="Change Status">
+										<i class="bx bx-dots-vertical-rounded font-20"></i>
+									</button>
+									<ul class="dropdown-menu dropdown-menu-end">
+										<li><a class="dropdown-item changeStatus" data-id="${row.id}" data-status="present"><i class="bx bx-check-circle me-2 text-success"></i> Present</a></li>
+										<li><a class="dropdown-item changeStatus" data-id="${row.id}" data-status="absent"><i class="bx bx-x-circle me-2 text-danger"></i> Absent</a></li>
+										<li><a class="dropdown-item changeStatus" data-id="${row.id}" data-status="rejected"><i class="bx bx-block me-2 text-danger"></i> Rejected</a></li>
+									</ul>
+								</div>
+							</div>
+						</td>
+					</tr>`;
 				});
 
 				$("#attedanceTableBody").html(tbody);
-
-				renderAttedancePagination(res.total, res.limit, res.page);
+				$("#emptyState").addClass("d-none");
+				$("#totalRecords").text(res.total || res.data.length);
+				updateStats(res.data, res.stats || null);
+				renderAttendancePagination(res.total, res.limit, res.page);
+				toggleShowAllButton();
+			},
+			error: function () {
+				$("#loadingState").addClass("d-none");
+				Swal.fire("Error", "Failed to load attendance data", "error");
 			},
 		});
 	}
 
-	function renderAttedancePagination(total, limit, currentPage) {
-		let totalPages = Math.ceil(total / limit);
-		let html = "";
-
-		html += `<li class="page-item ${currentPage == 1 ? "disabled" : ""}">
-                    <a class="page-link" href="javascript:;" onclick="loadAttendance(${currentPage - 1})">Previous</a>
-                 </li>`;
-
-		let start = Math.max(1, currentPage - 1);
-		let end = Math.min(totalPages, start + 2);
-
-		for (let i = start; i <= end; i++) {
-			html += `
-                <li class="page-item ${i == currentPage ? "active" : ""}">
-                    <a class="page-link" href="javascript:;" onclick="loadAttendance(${i})">${i}</a>
-                </li>`;
-		}
-
-		if (end < totalPages) {
-			html += `
-                <li class="page-item">
-                    <a class="page-link" href="javascript:;" onclick="loadAttendance(${currentPage + 1})">Next</a>
-                </li>`;
-		}
-
-		$(".pagination").html(html);
-	}
-
-	// Search Event
-	$("#serchattedance").on("keyup", function () {
-		let val = $(this).val();
-		loadAttendance(1, val);
+	$(document).on("click", ".att-page-link", function () {
+		if ($(this).closest(".page-item").hasClass("disabled")) return;
+		const page = Number($(this).data("page") || 1);
+		if (page < 1) return;
+		loadAttendance(page, currentSearch);
 	});
 
-	// Load first page on initial page load
-	loadAttendance();
-}
+	$("#serchattedance").on("keyup", function () {
+		loadAttendance(1, $(this).val());
+	});
 
-// Change status click event
-$(document).on("click", ".changeStatus", function () {
-	let id = $(this).data("id");
-	let newStatus = $(this).data("status");
+	$("#dateFilter, #statusFilter").on("change", function () {
+		loadAttendance(1);
+	});
 
-	$.ajax({
-		url: site_url + "dashboard/update_status",
-		type: "POST",
-		data: {
-			id: id,
-			status: newStatus,
-		},
-		dataType: "json",
-		success: function (res) {
-			if (res.status === true) {
-				Swal.fire({
-					icon: "success",
-					title: "Status Updated!",
-					text: res.message,
-					timer: 1500,
-					showConfirmButton: false,
-				});
+	$("#perPage").prop("disabled", true);
 
-				loadAttendance(); // Reload table
-			} else {
+	$(document).on("click", "#showAllAttendanceBtn", function () {
+		$("#serchattedance").val("");
+		$("#dateFilter").val("");
+		$("#statusFilter").val("");
+		loadAttendance(1, "");
+	});
+
+	$(document).on("click", ".attendancePhotoPreview", function () {
+		const src = $(this).data("full") || $(this).attr("src");
+		$("#siteImageModalImg").attr("src", src || "");
+		const modalEl = document.getElementById("siteImageModal");
+		if (!modalEl) return;
+		const modal = new bootstrap.Modal(modalEl);
+		modal.show();
+	});
+
+	$(document).on("click", ".changeStatus", function () {
+		let id = $(this).data("id");
+		let newStatus = $(this).data("status");
+
+		$.ajax({
+			url: site_url + "dashboard/update_status",
+			type: "POST",
+			data: { id: id, status: newStatus },
+			dataType: "json",
+			success: function (res) {
+				if (res.status === true) {
+					Swal.fire({
+						icon: "success",
+						title: "Status Updated!",
+						text: res.message,
+						timer: 1500,
+						showConfirmButton: false,
+					});
+					loadAttendance(currentPage, currentSearch);
+				} else {
+					Swal.fire({ icon: "error", title: "Oops...", text: res.message });
+				}
+			},
+			error: function () {
 				Swal.fire({
 					icon: "error",
-					title: "Oops...",
-					text: res.message,
+					title: "Server Error",
+					text: "Unable to update status.",
 				});
+			},
+		});
+	});
+
+	$(document).on("click", ".deleteAttendance", function () {
+		let id = $(this).data("id");
+		Swal.fire({
+			title: "Are you sure?",
+			text: "This attendance will be removed!",
+			icon: "warning",
+			showCancelButton: true,
+			confirmButtonText: "Yes, Delete",
+		}).then((result) => {
+			if (result.isConfirmed) {
+				$.post(
+					site_url + "dashboard/delete_attendance",
+					{ id: id },
+					function () {
+						Swal.fire("Deleted!", "Attendance removed.", "success");
+						loadAttendance(currentPage, currentSearch);
+					},
+					"json",
+				);
 			}
-		},
-		error: function () {
-			Swal.fire({
-				icon: "error",
-				title: "Server Error",
-				text: "Unable to update status.",
-			});
-		},
+		});
 	});
+
+	window.refreshAttendanceTable = function () {
+		loadAttendance(currentPage, currentSearch);
+	};
+
+	setDefaultAttendanceMonth();
+	toggleShowAllButton();
+	loadAttendance();
 });
 
-$(document).on("click", ".deleteAttendance", function () {
-	let id = $(this).data("id");
+function getInstallmentRowClass(
+	statusValue,
+	isInstallmentEntry,
+	manualPaidByNote,
+) {
+	if (!isInstallmentEntry) return "";
+	if (statusValue === "approve") return "installment-approve-row";
+	if (statusValue === "reject") return "installment-reject-row";
+	if (manualPaidByNote) return "installment-request-row";
+	return "";
+}
 
-	Swal.fire({
-		title: "Are you sure?",
-		text: "This attendance will be removed!",
-		icon: "warning",
-		showCancelButton: true,
-		confirmButtonText: "Yes, Delete",
-	}).then((result) => {
-		if (result.isConfirmed) {
-			$.post(
-				site_url + "dashboard/delete_attendance",
-				{ id: id },
-				function (res) {
-					Swal.fire("Deleted!", "Attendance removed.", "success");
-					loadAttendance();
-				},
-				"json",
-			);
-		}
-	});
-});
 $(document).ready(function () {
 	// Run code ONLY if #payment_data table exists
 	if ($("#payment_data").length > 0) {
-		let buyer_id = $("#buyer_id").val();
+		const buyer_id = ($("#buyer_id").val() || "").trim();
 		let currentPage = 1;
+		let currentSearch = "";
+		let searchTimer = null;
+
+		function escapeHtml(value) {
+			return String(value ?? "")
+				.replace(/&/g, "&amp;")
+				.replace(/</g, "&lt;")
+				.replace(/>/g, "&gt;")
+				.replace(/"/g, "&quot;")
+				.replace(/'/g, "&#39;");
+		}
+
+		function toAmount(value) {
+			const parsed = parseFloat(value);
+			return Number.isFinite(parsed) ? parsed : 0;
+		}
+
+		function formatCurrency(value) {
+			try {
+				return value.toLocaleString("en-IN", {
+					style: "currency",
+					currency: "INR",
+					maximumFractionDigits: 2,
+				});
+			} catch (e) {
+				return "INR " + value.toFixed(2);
+			}
+		}
+
+		function formatDateOnly(value) {
+			const raw = (value || "").toString().trim();
+			if (!raw) return "-";
+			const datePart = raw.split(" ")[0];
+			if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+			const dt = new Date(raw);
+			if (!Number.isNaN(dt.getTime())) {
+				const y = dt.getFullYear();
+				const m = String(dt.getMonth() + 1).padStart(2, "0");
+				const d = String(dt.getDate()).padStart(2, "0");
+				return `${y}-${m}-${d}`;
+			}
+			return raw;
+		}
+
+		function formatOrdinal(num) {
+			const n = parseInt(num, 10);
+			if (!Number.isFinite(n) || n <= 0) return "-";
+			const mod10 = n % 10;
+			const mod100 = n % 100;
+			if (mod10 === 1 && mod100 !== 11) return `${n}st`;
+			if (mod10 === 2 && mod100 !== 12) return `${n}nd`;
+			if (mod10 === 3 && mod100 !== 13) return `${n}rd`;
+			return `${n}th`;
+		}
+
+		function setStats(totalRecords, totalPaid, uniqueBuyers) {
+			$("#statTotal").text(totalRecords);
+			$("#statAmount").text(formatCurrency(totalPaid));
+			$("#statBuyers").text(uniqueBuyers);
+		}
+
+		function setEmiSummary(summary) {
+			const totalInstallments =
+				parseInt(summary?.total_installments || 0, 10) || 0;
+			const remainingInstallments =
+				parseInt(summary?.remaining_installments || 0, 10) || 0;
+			const pendingAmount = toAmount(summary?.pending_amount || 0);
+			const receivingAmount = toAmount(summary?.receiving_amount || 0);
+			const nextInstallmentDate = (
+				summary?.next_installment_date || ""
+			).toString();
+			const nextInstallmentAmount = toAmount(
+				summary?.next_installment_amount || 0,
+			);
+			let nextDateLabel = "-";
+
+			if (nextInstallmentDate) {
+				const dt = new Date(nextInstallmentDate + "T00:00:00");
+				if (!Number.isNaN(dt.getTime())) {
+					nextDateLabel = dt.toLocaleDateString("en-IN", {
+						year: "numeric",
+						month: "short",
+						day: "2-digit",
+					});
+				} else {
+					nextDateLabel = nextInstallmentDate;
+				}
+			}
+
+			$("#statTotalInstallments").text(totalInstallments);
+			$("#statRemainingInstallments").text(remainingInstallments);
+			$("#statPendingAmount").text(formatCurrency(pendingAmount));
+			$("#statReceivingAmount").text(formatCurrency(receivingAmount));
+			$("#statNextInstallmentDate").text(nextDateLabel);
+			$("#statNextInstallmentAmount").text(
+				formatCurrency(nextInstallmentAmount),
+			);
+		}
+
+		function renderMessage(message, cssClass = "text-muted") {
+			$("#payment_data").html(
+				`<tr><td colspan="8" class="text-center ${cssClass} py-4">${escapeHtml(message)}</td></tr>`,
+			);
+		}
+
+		function renderRows(res, page) {
+			const logs = Array.isArray(res.logs) ? res.logs : [];
+			const userName = res.user?.name || "-";
+			const buyerName = res.buyer?.name || "-";
+			const siteName = res.plot?.site_name || "-";
+			const plotNumber = res.plot?.plot_number || "-";
+			let index = (page - 1) * 10 + 1;
+			let html = "";
+			let pagePaid = 0;
+			let emiDisplayCounter = 0;
+
+			logs.forEach((log) => {
+				const amount = toAmount(log.paid_amount);
+				const safeAmount = escapeHtml(formatCurrency(amount));
+				pagePaid += amount;
+
+				const rawStatus = (log.status || "approve").toString().toLowerCase();
+				const statusValue = rawStatus === "requested" ? "pending" : rawStatus;
+				const sourceValue = (log.log_source || "cash").toString().toLowerCase();
+				const notesRaw = (log.notes || "").toString();
+				const notesText = notesRaw.toLowerCase();
+				const isInstallmentEntry =
+					sourceValue === "emi" || notesText.indexOf("emi") !== -1;
+				const isDownPaymentFlag = parseInt(log.is_down_payment || 0, 10) === 1;
+				const isDownPayment =
+					isDownPaymentFlag ||
+					(sourceValue === "cash" &&
+						!isInstallmentEntry &&
+						(notesText.indexOf("down payment") !== -1 ||
+							notesText.indexOf("initial payment") !== -1));
+				const isRequested = parseInt(log.is_requested || 0, 10) === 1;
+				const manualPaidByNote =
+					isRequested ||
+					(sourceValue === "cash" &&
+						amount > 0 &&
+						notesText.indexOf("paid") !== -1);
+				const rowClass = getInstallmentRowClass(
+					statusValue,
+					isInstallmentEntry,
+					manualPaidByNote,
+				);
+				const paymentMode = isInstallmentEntry ? "emi" : "cash";
+				const modeLabel = paymentMode === "emi" ? "EMI" : "Cash";
+				const modeIcon =
+					paymentMode === "emi" ? "bx-credit-card-front" : "bx-wallet";
+				const modeClass =
+					paymentMode === "emi"
+						? "payment-mode-chip-emi"
+						: "payment-mode-chip-cash";
+				const rowModeClass =
+					paymentMode === "emi"
+						? "payment-mode-row-emi"
+						: "payment-mode-row-cash";
+				const amountClass =
+					paymentMode === "emi"
+						? "amount-cell amount-emi"
+						: "amount-cell amount-cash";
+				const safeDate = escapeHtml(formatDateOnly(log.created_on || "-"));
+				const dateClass =
+					statusValue === "approve" ? "date-cell paid-date" : "date-cell";
+				const statusDataAttr = log.id
+					? `data-id="${escapeHtml(log.id)}" data-source="${escapeHtml(log.log_source || "cash")}"`
+					: `title="Initial payment entry cannot be changed"`;
+				const optionSelected = function (value) {
+					return statusValue == value ? "selected" : "";
+				};
+				let bgStyle = "";
+				if (statusValue === "approve") {
+					bgStyle = "background-color: #d1fae5 !important; border-color: #10b981 !important; color: #065f46 !important;";
+				} else if (statusValue === "reject") {
+					bgStyle = "background-color: #fee2e2 !important; border-color: #ef4444 !important; color: #7f1d1d !important;";
+				} else {
+					bgStyle = "background-color: #ffedd5 !important; border-color: #f97316 !important; color: #7c2d12 !important;";
+				}
+				const actionHtml = `
+					<select class="form-select form-select-sm statuspayment" style="min-width: 105px !important; font-weight: 600; border-radius: 20px; text-align-last: center; ${bgStyle}" ${statusDataAttr}>
+						<option value="pending" ${optionSelected("pending")}>Pending</option>
+						<option value="approve" ${optionSelected("approve")}>Approve</option>
+						<option value="reject" ${optionSelected("reject")}>Reject</option>
+					</select>
+				`;
+				const paymentModeBadge = `<span class="payment-mode-chip ${modeClass}"><i class="bx ${modeIcon}" aria-hidden="true"></i>${modeLabel}</span>`;
+				const paymentTypeBadge = isDownPayment
+					? '<span class="payment-type-tag">Down Payment</span>'
+					: "";
+				let installmentBadge = "";
+				if (isInstallmentEntry) {
+					const monthNoRaw = parseInt(log.month_no || 0, 10);
+					const installmentNo =
+						monthNoRaw > 0 ? monthNoRaw : ++emiDisplayCounter;
+					const installmentClass =
+						paymentMode === "emi"
+							? "installment-seq-emi"
+							: "installment-seq-cash";
+					installmentBadge = `<span class="installment-seq-tag ${installmentClass}">${escapeHtml(formatOrdinal(installmentNo))} Installment</span>`;
+				}
+				const combinedRowClass = [rowClass, rowModeClass]
+					.filter(Boolean)
+					.join(" ");
+
+				html += `
+					<tr class="${combinedRowClass}" data-installment="${isInstallmentEntry ? 1 : 0}" data-manual-paid="${manualPaidByNote ? 1 : 0}">
+						<td class="text-center"><span class="index-badge">${index++}</span></td>
+						<td>
+							<div class="name-cell">
+								<span class="avatar-circle av-blue">${escapeHtml(String(userName).charAt(0).toUpperCase() || "U")}</span>
+								<span class="name-text">${escapeHtml(userName)}</span>
+							</div>
+						</td>
+						<td>
+							<div class="name-cell">
+								<span class="avatar-circle av-purple">${escapeHtml(String(buyerName).charAt(0).toUpperCase() || "B")}</span>
+								<span class="name-text">${escapeHtml(buyerName)}</span>
+							</div>
+						</td>
+						<td><span class="site-badge">${escapeHtml(siteName)}</span></td>
+						<td><span class="plot-badge">${escapeHtml(plotNumber)}</span></td>
+						<td><span class="${dateClass}">${safeDate}</span></td>
+						<td>
+							<span class="${amountClass}">${safeAmount}</span>
+							${paymentModeBadge}
+							${installmentBadge}
+							${paymentTypeBadge}
+						</td>
+						<td class="text-center">${actionHtml}</td>
+					</tr>
+				`;
+			});
+
+			$("#payment_data").html(html);
+
+			const totalRows =
+				parseInt(res.pagination?.total_rows || logs.length, 10) || 0;
+			const start = totalRows === 0 ? 0 : (page - 1) * 10 + 1;
+			const end = Math.min(page * 10, totalRows);
+			$("#paginationInfo").html(
+				`Showing <strong>${start}-${end}</strong> of <strong>${totalRows}</strong> records`,
+			);
+
+			const receivingAmount = toAmount(
+				res.summary?.receiving_amount ?? pagePaid,
+			);
+			setStats(totalRows, receivingAmount, buyerName !== "-" ? 1 : 0);
+			setEmiSummary(res.summary || {});
+		}
+
+		function renderPagination(totalPages, current) {
+			const safeTotalPages = Math.max(1, parseInt(totalPages || 1, 10));
+			const safeCurrent = Math.min(
+				safeTotalPages,
+				Math.max(1, parseInt(current || 1, 10)),
+			);
+			const $list = $("#paginationList");
+			const $prev = $("#prevPage");
+			const $next = $("#nextPage");
+
+			$list.find(".js-page-num").remove();
+
+			for (let i = 1; i <= safeTotalPages; i++) {
+				$(
+					`<li class="page-item js-page-num ${i === safeCurrent ? "active" : ""}">
+						<a class="page-link" href="javascript:;" data-page="${i}">${i}</a>
+					</li>`,
+				).insertBefore($next);
+			}
+
+			$prev.toggleClass("disabled", safeCurrent <= 1);
+			$prev.find(".page-link").attr("data-page", Math.max(1, safeCurrent - 1));
+			$next.toggleClass("disabled", safeCurrent >= safeTotalPages);
+			$next
+				.find(".page-link")
+				.attr("data-page", Math.min(safeTotalPages, safeCurrent + 1));
+		}
 
 		function loadPaymentData(page = 1, search = "") {
 			currentPage = page;
+			currentSearch = search || "";
 
 			if (!buyer_id) {
-				$("#payment_data").html(
-					`<tr><td colspan='8' class="text-center text-danger">Buyer ID missing</td></tr>`,
+				renderMessage("Buyer ID missing", "text-danger");
+				$("#paginationList .js-page-num").remove();
+				$("#prevPage, #nextPage").addClass("disabled");
+				setStats(0, 0, 0);
+				setEmiSummary({});
+				$("#paginationInfo").html(
+					"Showing <strong>0</strong> of <strong>0</strong> records",
 				);
-				$(".pagination").html("");
 				return;
 			}
+
+			$("#payment_data").html(
+				`<tr class="skeleton-row"><td colspan="8"><div class="skeleton-wrap"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line"></div><div class="skeleton-line short"></div></div></td></tr>`,
+			);
 
 			$.ajax({
 				url: site_url + "plots/payment_data_api",
@@ -2701,95 +3346,113 @@ $(document).ready(function () {
 				},
 				dataType: "json",
 				success: function (res) {
-					if (!res.status) {
-						$("#payment_data").html(
-							`<tr><td colspan='8' class="text-center">${res.message}</td></tr>`,
+					if (!res || !res.status) {
+						renderMessage(res?.message || "Unable to load payment data");
+						$("#paginationList .js-page-num").remove();
+						$("#prevPage, #nextPage").addClass("disabled");
+						setStats(0, 0, 0);
+						setEmiSummary({});
+						$("#paginationInfo").html(
+							"Showing <strong>0</strong> of <strong>0</strong> records",
 						);
-						$(".pagination").html(""); // clear pagination if no data
 						return;
 					}
 
 					if (!res.logs || res.logs.length === 0) {
-						$("#payment_data").html(
-							`<tr><td colspan='8' class="text-center text-muted">No payment records found</td></tr>`,
+						renderMessage("No payment records found");
+						$("#paginationList .js-page-num").remove();
+						$("#prevPage, #nextPage").addClass("disabled");
+						setStats(0, 0, 0);
+						setEmiSummary(res.summary || {});
+						$("#paginationInfo").html(
+							"Showing <strong>0</strong> of <strong>0</strong> records",
 						);
-						$(".pagination").html("");
 						return;
 					}
 
-					let html = "";
-					let index = (page - 1) * 10 + 1;
-
-					res.logs.forEach((log) => {
-						html += `
-                            <tr>
-                                <td>${index++}</td>
-                                <td>${res.user?.name ?? "-"}</td>
-                                <td>${res.buyer?.name ?? "-"}</td>
-                                <td>${res.plot?.site_name ?? "-"}</td>
-                                <td>${res.plot?.plot_number ?? "-"}</td>
-                                <td>${log.created_on}</td>
-                                <td>${log.paid_amount}</td>
-                                 <td>
-                            <select class="form-select statuspayment" data-id="${log.id}">
-                    <option value="pending" ${log.status == "pending" ? "selected" : ""}>Pending</option>
-                    <option value="approve" ${log.status == "approve" ? "selected" : ""}>Approve</option>
-                    <option value="reject" ${log.status == "reject" ? "selected" : ""}>Reject</option>
-                </select>
-                        </td>
-                            </tr>`;
-					});
-
-					$("#payment_data").html(html);
-
-					loadPagination(
-						res.pagination.total_pages,
-						res.pagination.current_page,
+					renderRows(res, page);
+					renderPagination(
+						res.pagination?.total_pages || 1,
+						res.pagination?.current_page || 1,
+					);
+				},
+				error: function () {
+					renderMessage("Server error while loading payments", "text-danger");
+					$("#paginationList .js-page-num").remove();
+					$("#prevPage, #nextPage").addClass("disabled");
+					setStats(0, 0, 0);
+					setEmiSummary({});
+					$("#paginationInfo").html(
+						"Showing <strong>0</strong> of <strong>0</strong> records",
 					);
 				},
 			});
 		}
 
-		// Pagination rendering
-		function loadPagination(totalPages, current) {
-			let phtml = "";
-
-			phtml += `<li class="page-item ${current == 1 ? "disabled" : ""}">
-                        <a class="page-link" href="#" data-page="${current - 1}">Previous</a>
-                      </li>`;
-
-			for (let i = 1; i <= totalPages; i++) {
-				phtml += `<li class="page-item ${i == current ? "active" : ""}">
-                            <a class="page-link" href="#" data-page="${i}">${i}</a>
-                          </li>`;
-			}
-
-			phtml += `<li class="page-item ${current == totalPages ? "disabled" : ""}">
-                        <a class="page-link" href="#" data-page="${current + 1}">Next</a>
-                      </li>`;
-
-			$(".pagination").html(phtml);
-		}
-
-		// Pagination Click
-		$(document).on("click", ".pagination a", function (e) {
+		$(document).on("click", "#paginationList .page-link", function (e) {
 			e.preventDefault();
-			let page = $(this).data("page");
-			if (page) loadPaymentData(page, $("#serchPlot").val());
+			const $item = $(this).closest(".page-item");
+			if ($item.hasClass("disabled") || $item.hasClass("active")) return;
+			const nextPage = parseInt($(this).data("page"), 10);
+			if (!nextPage || nextPage === currentPage) return;
+			loadPaymentData(nextPage, currentSearch);
 		});
 
-		// Search
 		$("#serchPlot").on("keyup", function () {
-			loadPaymentData(1, $(this).val());
+			const query = $(this).val();
+			clearTimeout(searchTimer);
+			searchTimer = setTimeout(function () {
+				loadPaymentData(1, query);
+			}, 250);
 		});
 
-		// Initial Load
-		loadPaymentData();
+		loadPaymentData(1, "");
 	}
 });
+$(document).on("focus mousedown", ".statuspayment", function () {
+	$(this).data("prevValue", $(this).val());
+});
 $(document).on("change", ".statuspayment", function () {
-	let log_id = $(this).data("id");
-	let status = $(this).val();
+	let $select = $(this);
+	let log_id = $select.data("id");
+	let source = ($select.data("source") || "cash").toString().toLowerCase();
+	let status = $select.val();
+	let previousStatus = $select.data("prevValue") || "pending";
+
+	if (!log_id) {
+		Swal.fire(
+			"Not allowed",
+			"This entry is from initial payment data and cannot be updated.",
+			"info",
+		);
+		$select.val(previousStatus);
+		return;
+	}
+
+	function updateSelectStyle($el, val) {
+		if (val === "approve") {
+			$el.css({
+				"background-color": "#d1fae5",
+				"border-color": "#10b981",
+				"color": "#065f46"
+			});
+		} else if (val === "reject") {
+			$el.css({
+				"background-color": "#fee2e2",
+				"border-color": "#ef4444",
+				"color": "#7f1d1d"
+			});
+		} else {
+			$el.css({
+				"background-color": "#ffedd5",
+				"border-color": "#f97316",
+				"color": "#7c2d12"
+			});
+		}
+	}
+
+	// Optimistically update style
+	updateSelectStyle($select, status);
 
 	Swal.fire({
 		title: "Are you sure?",
@@ -2803,19 +3466,64 @@ $(document).on("change", ".statuspayment", function () {
 			$.ajax({
 				url: site_url + "plots/update_payment_status",
 				method: "POST",
-				data: { id: log_id, status: status },
+				dataType: "json",
+				data: { id: log_id, status: status, source: source },
+				beforeSend: function () {
+					$select.prop("disabled", true);
+				},
 				success: function (res) {
-					console.log("Status updated:", res);
+					if (res && res.status) {
+						const $row = $select.closest("tr");
+						const isInstallmentRow = String($row.data("installment")) === "1";
+						const manualPaidByNote = String($row.data("manualPaid")) === "1";
+						$row.removeClass(
+							"installment-approve-row installment-reject-row installment-pending-row",
+						);
+						if (isInstallmentRow) {
+							const newRowClass = getInstallmentRowClass(
+								status,
+								isInstallmentRow,
+								manualPaidByNote,
+							);
+							if (newRowClass) {
+								$row.addClass(newRowClass);
+							}
+						}
+						$select.data("prevValue", status);
+
+						let successText = "Payment status updated successfully.";
+						if (isInstallmentRow && status === "approve") {
+							successText = "You received one installment successfully.";
+						} else if (isInstallmentRow && status === "reject") {
+							successText = "Installment marked as rejected.";
+						} else if (isInstallmentRow && status === "pending") {
+							successText = "Installment moved to pending.";
+						}
+
+						Swal.fire("Updated!", successText, "success");
+						return;
+					}
+
 					Swal.fire(
-						"Updated!",
-						"Payment status updated successfully.",
-						"success",
+						"Failed",
+						res?.message || "Unable to update payment status.",
+						"error",
 					);
+					$select.val(previousStatus);
+					updateSelectStyle($select, previousStatus);
 				},
 				error: function () {
 					Swal.fire("Error", "Server error!", "error");
+					$select.val(previousStatus);
+					updateSelectStyle($select, previousStatus);
+				},
+				complete: function () {
+					$select.prop("disabled", false);
 				},
 			});
+		} else {
+			$select.val(previousStatus);
+			updateSelectStyle($select, previousStatus);
 		}
 	});
 });
@@ -2840,50 +3548,82 @@ $(document).on("click", ".update_form", function () {
 	$(".error-msg").html("");
 
 	let name = $("#fullName").val().trim();
+	let business_name = $("#businessName").val().trim();
 	let email = $("#email").val().trim();
 	let mobile = $("#mobile").val().trim();
-	let password = $("#password").val().trim();
+	let address = $("#address").val().trim();
+	let gst_number = $("#gstNumber").val().trim();
+	let facebook = $("#facebook").val().trim();
+	let instagram = $("#instagram").val().trim();
+	let bank_name = $("#bankName").val() ? $("#bankName").val().trim() : "";
+	let account_number = $("#accountNumber").val() ? $("#accountNumber").val().trim() : "";
+	let ifsc_code = $("#ifscCode").val() ? $("#ifscCode").val().trim() : "";
 
 	let isValid = true;
-
-	// âœ… Name validation
-	if (name === "") {
-		$("#fullName")
-			.closest(".col-sm-9")
+	const setFieldError = function (selector, message) {
+		const $field = $(selector);
+		const $legacyError = $field.closest(".col-sm-9").find(".error-msg");
+		if ($legacyError.length) {
+			$legacyError.text(message);
+			return;
+		}
+		const $nearestError = $field
+			.closest(".col-sm-9, .col-md-6, .col-12, .form-group-animated")
 			.find(".error-msg")
-			.text("Full name is required");
+			.first();
+		if ($nearestError.length) {
+			$nearestError.text(message);
+		}
+	};
+
+	// ✅ Name validation
+	if (name === "") {
+		setFieldError("#fullName", "Full name is required");
 		isValid = false;
 	}
 
-	// âœ… Email validation
+	// ✅ Business Name validation
+	if (business_name === "") {
+		setFieldError("#businessName", "Business name is required");
+		isValid = false;
+	}
+
+	// ✅ Email validation
 	if (email === "") {
-		$("#email")
-			.closest(".col-sm-9")
-			.find(".error-msg")
-			.text("Email is required");
+		setFieldError("#email", "Email is required");
 		isValid = false;
 	} else if (!validateEmail(email)) {
-		$("#email")
-			.closest(".col-sm-9")
-			.find(".error-msg")
-			.text("Enter a valid email address");
+		setFieldError("#email", "Enter a valid email address");
 		isValid = false;
 	}
 
-	// âŒ Stop if validation fails
+	// ❌ Stop if validation fails
 	if (!isValid) return;
 
-	// âœ… MUST use FormData for file upload
+	// ✅ MUST use FormData for file upload
 	let formData = new FormData();
 	formData.append("name", name);
+	formData.append("business_name", business_name);
 	formData.append("email", email);
 	formData.append("mobile", mobile);
-	formData.append("password", password);
+	formData.append("address", address);
+	formData.append("gst_number", gst_number);
+	formData.append("facebook", facebook);
+	formData.append("instagram", instagram);
+	formData.append("bank_name", bank_name);
+	formData.append("account_number", account_number);
+	formData.append("ifsc_code", ifsc_code);
 
-	// âœ… Profile image (optional)
+	// ✅ Profile image (optional)
 	const file = $("#avatar-upload")[0].files[0];
 	if (file) {
 		formData.append("profile_image", file);
+	}
+
+	// ✅ Signature image (optional)
+	const sigFile = $("#signatureUpload").length ? $("#signatureUpload")[0].files[0] : null;
+	if (sigFile) {
+		formData.append("signature", sigFile);
 	}
 
 	// âœ… AJAX Request
@@ -2955,31 +3695,13 @@ if (printBtn) {
 			return;
 		}
 
-		fetch(site_url + "plots/download_pdf/" + buyer_id, {
-			method: "GET",
-		})
-			.then((response) => response.blob())
-			.then((blob) => {
-				const url = window.URL.createObjectURL(blob);
-				const a = document.createElement("a");
-
-				a.style.display = "none";
-				a.href = url;
-				a.download = "Buyer_Statement_" + buyer_id + ".pdf";
-
-				document.body.appendChild(a);
-				a.click();
-
-				window.URL.revokeObjectURL(url);
-				a.remove();
-			})
-			.catch(() => {
-				Swal.fire({
-					icon: "error",
-					title: "Download failed",
-					text: "Unable to generate PDF",
-				});
-			});
+		const downloadUrl = site_url + "plots/download_pdf/" + buyer_id;
+		const tempLink = document.createElement("a");
+		tempLink.href = downloadUrl;
+		tempLink.style.display = "none";
+		document.body.appendChild(tempLink);
+		tempLink.click();
+		tempLink.remove();
 	});
 }
 
@@ -3153,6 +3875,16 @@ $(document).ready(function () {
 
 	function loadSuperSites(page = 1, search = "") {
 		if (!$("#superAdminSitesTable").length) return;
+
+		function escHtml(v) {
+			return String(v ?? "")
+				.replace(/&/g, "&amp;")
+				.replace(/</g, "&lt;")
+				.replace(/>/g, "&gt;")
+				.replace(/"/g, "&quot;")
+				.replace(/'/g, "&#39;");
+		}
+
 		$.ajax({
 			url: site_url + "superadmin/get_all_sites",
 			method: "GET",
@@ -3161,6 +3893,8 @@ $(document).ready(function () {
 			success: function (res) {
 				if (res.status && res.data && res.data.length > 0) {
 					let rows = "";
+					const startIndex = (page - 1) * 5 + 1;
+
 					res.data.forEach((site, i) => {
 						const imgStatus = site.site_images_status || "";
 						const hasImages =
@@ -3175,25 +3909,56 @@ $(document).ready(function () {
 
 						let imageBadge = "";
 						if (imgStatus === "pending") {
-							imageBadge =
-								'<span class="badge bg-warning-light text-warning">Pending</span>';
+							let firstImage = "";
+							try {
+								const parsedImages = JSON.parse(site.site_images_pending || "[]");
+								if (Array.isArray(parsedImages) && parsedImages.length > 0) {
+									firstImage = parsedImages[0];
+								}
+							} catch (e) {}
+							
+							if (!firstImage) {
+								try {
+									const parsedImages = JSON.parse(site.site_images || "[]");
+									if (Array.isArray(parsedImages) && parsedImages.length > 0) {
+										firstImage = parsedImages[0];
+									}
+								} catch (e) {}
+							}
+
+							if (firstImage) {
+								imageBadge = `
+									<div class="d-flex flex-column align-items-center">
+										<img src="${site_url}${firstImage}" alt="Site Image" style="width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;">
+										<span class="badge bg-warning-light text-warning mt-1">Pending</span>
+									</div>
+								`;
+							} else {
+								imageBadge =
+									'<span class="badge bg-warning-light text-warning">Pending</span>';
+							}
 						} else if (imgStatus === "reject") {
 							imageBadge =
 								'<span class="badge bg-danger-light text-danger">Rejected</span>';
 						} else if (hasApprovedImages) {
-							let images = [];
+							let firstImage = "";
 							try {
-								images = JSON.parse(site.site_images) || [];
+								const parsedImages = JSON.parse(site.site_images || "[]");
+								if (Array.isArray(parsedImages) && parsedImages.length > 0) {
+									firstImage = parsedImages[0];
+								}
 							} catch (e) {}
-							if (images.length > 0) {
-								imageBadge =
-									'<div style="text-align:center;"><img src="' +
-									site_url +
-									images[0] +
-									'" style="width:100px;height:100px;object-fit:cover;border-radius:6px;"></div>';
+
+							if (firstImage) {
+								imageBadge = `
+									<div class="d-flex flex-column align-items-center">
+										<img src="${site_url}${firstImage}" alt="Site Image" style="width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;">
+										<span class="badge bg-success-light text-success mt-1">Approved</span>
+									</div>
+								`;
 							} else {
 								imageBadge =
-									'<span class="badge bg-secondary-light text-secondary">No Images</span>';
+									'<span class="badge bg-success-light text-success">Approved</span>';
 							}
 						} else {
 							imageBadge =
@@ -3201,19 +3966,21 @@ $(document).ready(function () {
 						}
 
 						const mapBadge = hasMap
-							? '<span class="badge bg-success-light text-success">✓ Yes</span>'
-							: '<span class="badge bg-secondary-light text-secondary">✗ No</span>';
+							? '<span class="badge bg-success-light text-success">Yes</span>'
+							: '<span class="badge bg-secondary-light text-secondary mapReason" data-reason="Map not uploaded" style="cursor:pointer;">No</span>';
 
+						const hasPendingImages = imgStatus === "pending" && site.site_images_pending && site.site_images_pending !== "NULL" && site.site_images_pending !== "null";
+						const hasAnyImages = hasApprovedImages || hasPendingImages;
 						const viewBtn = `<button class="btn btn-sm btn-primary viewSiteDetail" data-id="${site.id}" title="View Details"><i class="bx bx-show"></i></button>`;
-						const uploadBtn = `<button type="button" class="btn btn-sm btn-success uploadSiteMap" data-id="${site.id}" data-has-images="${hasApprovedImages ? "1" : "0"}" data-has-map="${hasMap ? "1" : "0"}" data-bs-toggle="modal" data-bs-target="#siteMapUploadModal" title="Upload Map"><i class="bx bx-upload"></i></button>`;
+						const uploadBtn = `<button type="button" class="btn btn-sm btn-success uploadSiteMap" data-id="${site.id}" data-has-images="${hasAnyImages ? "1" : "0"}" data-has-map="${hasMap ? "1" : "0"}" data-bs-toggle="modal" data-bs-target="#siteMapUploadModal" title="Upload Map"><i class="bx bx-upload"></i></button>`;
 
 						rows += `
 							<tr>
-								<td class="fw-semibold">${i + 1}</td>
-								<td class="fw-semibold">${site.name || "-"}</td>
-								<td><small>${site.admin_name || "-"}</small></td>
-								<td><small>${site.location || "-"}</small></td>
-								<td class="text-center"><span class="badge bg-info">${site.total_plots || 0}</span></td>
+								<td class="fw-semibold">${startIndex + i}</td>
+								<td class="fw-semibold">${escHtml(site.name || "-")}</td>
+								<td><small>${escHtml(site.admin_name || "-")}</small></td>
+								<td><small>${escHtml(site.location || "-")}</small></td>
+								<td class="text-center"><span class="badge bg-info">${site.plot_count || site.total_plots || 0}</span></td>
 								<td class="text-center">${imageBadge}</td>
 								<td class="text-center">${mapBadge}</td>
 								<td class="text-center">
@@ -3225,6 +3992,7 @@ $(document).ready(function () {
 							</tr>
 						`;
 					});
+
 					$("#superAdminSitesTable").html(rows);
 					renderPagination("#sitePagination", res.pagination);
 					applyTableFilter("#superAdminSitesTable", search, 8);
@@ -3275,8 +4043,33 @@ $(document).ready(function () {
 
 						let imageBadge = "";
 						if (imgStatus === "pending") {
-							imageBadge =
-								'<span class="badge bg-warning-light text-warning">Pending</span>';
+							let firstImage = "";
+							try {
+								const parsedImages = JSON.parse(site.site_images_pending || "[]");
+								if (Array.isArray(parsedImages) && parsedImages.length > 0) {
+									firstImage = parsedImages[0];
+								}
+							} catch (e) {}
+							
+							if (!firstImage) {
+								try {
+									const parsedImages = JSON.parse(site.site_images || "[]");
+									if (Array.isArray(parsedImages) && parsedImages.length > 0) {
+										firstImage = parsedImages[0];
+									}
+								} catch (e) {}
+							}
+
+							if (firstImage) {
+								imageBadge =
+									'<div style="text-align:center;"><img src="' +
+									site_url +
+									firstImage +
+									'" style="width:100px;height:100px;object-fit:cover;border-radius:6px;margin-bottom:8px;"><br><span class="badge bg-warning-light text-warning">Pending</span></div>';
+							} else {
+								imageBadge =
+									'<span class="badge bg-warning-light text-warning">Pending</span>';
+							}
 						} else if (imgStatus === "reject") {
 							imageBadge =
 								'<span class="badge bg-danger-light text-danger">Rejected</span>';
@@ -3304,11 +4097,13 @@ $(document).ready(function () {
 								'<span class="badge bg-secondary-light text-secondary">No Images</span>';
 						}
 
+						const hasPendingImages = imgStatus === "pending" && site.site_images_pending && site.site_images_pending !== "NULL" && site.site_images_pending !== "null";
+						const hasAnyImages = hasApprovedImages || hasPendingImages;
 						const mapBtn = hasMap
 							? `<a href="${site_url}${site.site_map}" target="_blank" class="btn btn-sm btn-outline-success">
 									<i class="bx bx-map"></i> View Map
 								</a>`
-							: hasApprovedImages
+							: hasAnyImages
 								? `<button type="button" class="btn btn-sm btn-outline-primary uploadMapBtn" data-site-id="${site.id}">
 									<i class="bx bx-upload"></i> Upload Map
 								</button>`
@@ -3321,7 +4116,7 @@ $(document).ready(function () {
 								<td class="fw-semibold">${startIndex + i}</td>
 								<td class="fw-semibold">${site.name || "-"}</td>
 								<td><small>${site.location || "-"}</small></td>
-								<td class="text-center"><span class="badge bg-info">${site.total_plots || 0}</span></td>
+								<td class="text-center"><span class="badge bg-info">${site.plot_count || site.total_plots || 0}</span></td>
 								<td class="text-center">${imageBadge}</td>
 								<td class="text-center">${mapBtn}</td>
 							</tr>
@@ -3934,7 +4729,7 @@ $(document).ready(function () {
 	if ($("#adminSitesTable").length) {
 		initAdminSitesPagination();
 	}
- 
+
 	if ($("#adminPlotsTable").length) {
 		initAdminPlotsPagination();
 	}

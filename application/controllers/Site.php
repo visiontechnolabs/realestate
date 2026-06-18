@@ -9,9 +9,6 @@ class Site extends My_Controller
     {
 
         parent::__construct();
-
-
-
     }
 
 
@@ -26,7 +23,6 @@ class Site extends My_Controller
         $this->load->view('site_view');
 
         $this->load->view('footer');
-
     }
     public function get_sites()
     {
@@ -46,8 +42,8 @@ class Site extends My_Controller
         // ------------------------------
         // BASE QUERY FOR SITES
         // ------------------------------
-    $this->db->from('sites');
-    $this->db->where('admin_id', $admin_id);
+        $this->db->from('sites');
+        $this->db->where('admin_id', $admin_id);
 
         if (!empty($search)) {
             $this->db->group_start()
@@ -127,7 +123,7 @@ class Site extends My_Controller
 
     public function expenses()
     {
-       
+
 
         $this->load->view('header');
         $this->load->view('expenses_view'); // ← Send it here
@@ -142,26 +138,38 @@ class Site extends My_Controller
         $limit = 10;
         $offset = ($page - 1) * $limit;
 
-        $search = $this->input->post('search');
+        $search = trim((string) $this->input->post('search'));
         $site_id = $this->input->post('site_id');
         $month_filter = trim((string) $this->input->post('month_filter'));
         if (!preg_match('/^\d{4}-\d{2}$/', $month_filter)) {
             $month_filter = '';
         }
+        $search_like = $this->db->escape_like_str($search);
 
         /* ----------------------------------------------
            COUNT QUERY
         ---------------------------------------------- */
         $this->db->from('expenses');
-        $this->db->where('admin_id', $admin_id);
-        $this->db->where('isActive', 1);  // Only active
+        $this->db->join('sites', 'sites.id = expenses.site_id', 'left');
+        $this->db->join('users', 'users.id = expenses.user_id', 'left');
+        $this->db->join('user_master', 'user_master.id = expenses.admin_id', 'left');
+        $this->db->where('expenses.admin_id', $admin_id);
+        $this->db->where('expenses.isActive', 1);  // Only active
 
         if (!empty($site_id)) {
-            $this->db->where('site_id', $site_id);
+            $this->db->where('expenses.site_id', $site_id);
         }
 
         if (!empty($search)) {
-            $this->db->like('description', $search);
+            $this->db->group_start();
+            $this->db->like('expenses.description', $search);
+            $this->db->or_like('sites.name', $search);
+            $this->db->or_like('users.name', $search);
+            $this->db->or_like('user_master.name', $search);
+            $this->db->or_like('expenses.status', $search);
+            $this->db->or_like('expenses.date', $search);
+            $this->db->or_where("CAST(expenses.amount AS CHAR) LIKE '%{$search_like}%'", null, false);
+            $this->db->group_end();
         }
 
         if ($month_filter !== '') {
@@ -179,18 +187,18 @@ class Site extends My_Controller
         /* ----------------------------------------------
            DATA QUERY
         ---------------------------------------------- */
-    $this->db->select('
+        $this->db->select('
         expenses.*, 
         sites.name AS site_name,
         expenses.expense_image AS expense_image,
         COALESCE(users.name, user_master.name) AS user_name
     ');
-    $this->db->from('expenses');
+        $this->db->from('expenses');
 
-    // joins
-    $this->db->join('sites', 'sites.id = expenses.site_id', 'left');
-    $this->db->join('users', 'users.id = expenses.user_id', 'left');
-    $this->db->join('user_master', 'user_master.id = expenses.admin_id', 'left');
+        // joins
+        $this->db->join('sites', 'sites.id = expenses.site_id', 'left');
+        $this->db->join('users', 'users.id = expenses.user_id', 'left');
+        $this->db->join('user_master', 'user_master.id = expenses.admin_id', 'left');
 
         // filters
         $this->db->where('expenses.admin_id', $admin_id);
@@ -201,7 +209,15 @@ class Site extends My_Controller
         }
 
         if (!empty($search)) {
+            $this->db->group_start();
             $this->db->like('expenses.description', $search);
+            $this->db->or_like('sites.name', $search);
+            $this->db->or_like('users.name', $search);
+            $this->db->or_like('user_master.name', $search);
+            $this->db->or_like('expenses.status', $search);
+            $this->db->or_like('expenses.date', $search);
+            $this->db->or_where("CAST(expenses.amount AS CHAR) LIKE '%{$search_like}%'", null, false);
+            $this->db->group_end();
         }
 
         if ($month_filter !== '') {
@@ -220,15 +236,26 @@ class Site extends My_Controller
 
         $this->db->select('status, COUNT(*) AS total_count, COALESCE(SUM(amount), 0) AS total_amount');
         $this->db->from('expenses');
-        $this->db->where('admin_id', $admin_id);
-        $this->db->where('isActive', 1);
+        $this->db->join('sites', 'sites.id = expenses.site_id', 'left');
+        $this->db->join('users', 'users.id = expenses.user_id', 'left');
+        $this->db->join('user_master', 'user_master.id = expenses.admin_id', 'left');
+        $this->db->where('expenses.admin_id', $admin_id);
+        $this->db->where('expenses.isActive', 1);
 
         if (!empty($site_id)) {
-            $this->db->where('site_id', $site_id);
+            $this->db->where('expenses.site_id', $site_id);
         }
 
         if (!empty($search)) {
-            $this->db->like('description', $search);
+            $this->db->group_start();
+            $this->db->like('expenses.description', $search);
+            $this->db->or_like('sites.name', $search);
+            $this->db->or_like('users.name', $search);
+            $this->db->or_like('user_master.name', $search);
+            $this->db->or_like('expenses.status', $search);
+            $this->db->or_like('expenses.date', $search);
+            $this->db->or_where("CAST(expenses.amount AS CHAR) LIKE '%{$search_like}%'", null, false);
+            $this->db->group_end();
         }
 
         if ($month_filter !== '') {
@@ -386,26 +413,26 @@ class Site extends My_Controller
     }
 
     public function get_users()
-{
-    header('Content-Type: application/json');
+    {
+        header('Content-Type: application/json');
 
-    $admin_id = $this->input->get('admin_id'); // get admin id from ajax
+        $admin_id = $this->input->get('admin_id'); // get admin id from ajax
 
-    $this->db->select('id, name');
-    $this->db->from('users');
-    $this->db->where('isActive', 1);
+        $this->db->select('id, name');
+        $this->db->from('users');
+        $this->db->where('isActive', 1);
 
-    if (!empty($admin_id)) {
-        $this->db->where('admin_id', $admin_id); // filter by admin
+        if (!empty($admin_id)) {
+            $this->db->where('admin_id', $admin_id); // filter by admin
+        }
+
+        $users = $this->db->get()->result();
+
+        echo json_encode([
+            'status' => true,
+            'data'   => $users
+        ]);
     }
-
-    $users = $this->db->get()->result();
-
-    echo json_encode([
-        'status' => true,
-        'data'   => $users
-    ]);
-}
 
 
     public function get_site_images()
@@ -573,10 +600,9 @@ class Site extends My_Controller
         $site_name = trim($this->input->post('site_name'));
         $location = trim($this->input->post('location'));
         $area = trim($this->input->post('area'));
-        $total_plots = trim($this->input->post('total_plots'));
 
         // ✅ Validation
-        if (empty($site_name) || empty($location) || empty($area) || empty($total_plots)) {
+        if (empty($site_name) || empty($location) || empty($area)) {
             $response['message'] = 'All fields are required';
             echo json_encode($response);
             return;
@@ -596,7 +622,6 @@ class Site extends My_Controller
             'name' => $site_name,
             'location' => $location,
             'area' => $area,
-            'total_plots' => $total_plots,
             'listed_map' => 0,
             'isActive' => 1, // Default active
             'created_at' => date('Y-m-d')
@@ -816,7 +841,17 @@ class Site extends My_Controller
 
     public function add_expenses()
     {
-        $data['sites'] = $this->general_model->getAll('sites', ['isActive' => '1']);
+        $admin_id = $this->admin['user_id'] ?? null;
+        $data['sites'] = [];
+
+        if ($admin_id) {
+            $data['sites'] = $this->db
+                ->where('admin_id', $admin_id)
+                ->where('isActive', 1)
+                ->order_by('name', 'ASC')
+                ->get('sites')
+                ->result();
+        }
 
         $this->load->view('header');
         $this->load->view('add_expenses_form', $data);
@@ -842,6 +877,25 @@ class Site extends My_Controller
         $date = trim($this->input->post('date'));
         $expense_image = null;
 
+        if (empty($site_id) || $amount === '' || $desc === '' || $date === '') {
+            $response['message'] = 'All fields are required';
+            echo json_encode($response);
+            return;
+        }
+
+        $site = $this->db
+            ->where('id', $site_id)
+            ->where('admin_id', $admin_id)
+            ->where('isActive', 1)
+            ->get('sites')
+            ->row();
+
+        if (!$site) {
+            $response['message'] = 'Invalid site selected';
+            echo json_encode($response);
+            return;
+        }
+
         if (!empty($_FILES['expense_image']['name'])) {
             $upload_path = FCPATH . 'uploads/expenses/';
             if (!is_dir($upload_path)) {
@@ -851,8 +905,8 @@ class Site extends My_Controller
             $safe_name = preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $_FILES['expense_image']['name']);
             $config = [
                 'upload_path' => $upload_path,
-                'allowed_types' => 'jpg|jpeg|png|webp',
-                'max_size' => 4096,
+                'allowed_types' => 'jpg|jpeg|png|pdf',
+                'max_size' => 100,
                 'file_name' => time() . '_' . $safe_name
             ];
 
@@ -891,18 +945,10 @@ class Site extends My_Controller
                 'message' => 'expense added successfully',
 
             ];
-
         } else {
             $response['message'] = 'Failed to add expense';
         }
 
         echo json_encode($response);
     }
-
-
-
-
-
 }
-
-?>

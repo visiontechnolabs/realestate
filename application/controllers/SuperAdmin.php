@@ -1,7 +1,7 @@
 <?php
 require_once(APPPATH . 'core/My_Controller.php');
 
-class SuperAdmin extends My_Controller
+class Superadmin extends My_Controller
 {
     public function __construct()
     {
@@ -53,9 +53,9 @@ class SuperAdmin extends My_Controller
         $data['admin_start_index'] = $offset + 1;
         $data['admin_search'] = $search;   // ✅ IMPORTANT
 
-        $this->load->view('header');
+        $this->load->view('superadmin/header');
         $this->load->view('superadmin/admins_view', $data);
-        $this->load->view('footer');
+        $this->load->view('superadmin/footer');
     }
 
     public function change_admin_status($admin_id = null)
@@ -182,9 +182,9 @@ class SuperAdmin extends My_Controller
         $data['admin_sites_start_index'] = $offset + 1;
         $data['admin_sites_search'] = $search;
 
-        $this->load->view('header');
+        $this->load->view('superadmin/header');
         $this->load->view('superadmin/admin_sites_view', $data);
-        $this->load->view('footer');
+        $this->load->view('superadmin/footer');
     }
 
     public function admin_plots($admin_id = null)
@@ -255,9 +255,9 @@ class SuperAdmin extends My_Controller
         $data['admin_plots_start_index'] = $offset + 1;
         $data['admin_plots_search'] = $search;
 
-        $this->load->view('header');
+        $this->load->view('superadmin/header');
         $this->load->view('superadmin/admin_plots_view', $data);
-        $this->load->view('footer');
+        $this->load->view('superadmin/footer');
     }
 
 
@@ -287,7 +287,7 @@ class SuperAdmin extends My_Controller
 
         $total_records = $this->db->count_all_results('', FALSE);
 
-        $this->db->select('s.id, s.name, s.location, s.total_plots, s.site_images, s.site_images_pending, s.site_images_status, s.site_images_reason, s.site_map, s.listed_map, s.admin_id, um.name as admin_name');
+        $this->db->select("s.id, s.name, s.location, s.total_plots, s.site_images, s.site_images_pending, s.site_images_status, s.site_images_reason, s.site_map, s.listed_map, s.admin_id, um.name as admin_name, (SELECT COUNT(*) FROM plots p WHERE p.site_id = s.id AND p.isActive = 1) AS plot_count");
         $this->db->order_by('s.created_at', 'DESC');
         $this->db->order_by('s.id', 'DESC');
         $this->db->limit($limit, $offset);
@@ -309,9 +309,9 @@ class SuperAdmin extends My_Controller
         $data['site_start_index'] = $offset + 1;
         $data['site_search'] = $search;   // ✅ IMPORTANT
 
-        $this->load->view('header');
+        $this->load->view('superadmin/header');
         $this->load->view('superadmin/sites_view', $data);
-        $this->load->view('footer');
+        $this->load->view('superadmin/footer');
     }
 
     public function login_as_admin($admin_id = null)
@@ -489,9 +489,10 @@ class SuperAdmin extends My_Controller
         $total_records = $this->db->count_all_results(); // ✅ CLEAN COUNT
 
         // -------- GET PAGINATED DATA (new fresh query) --------
-        $this->db->select('s.id, s.name, s.location, s.total_plots, 
-                       s.site_images, s.site_images_pending, s.site_images_status, s.site_images_reason, s.site_map, s.listed_map, s.admin_id, 
-                       um.name as admin_name');
+        $this->db->select("s.id, s.name, s.location, s.total_plots,
+                       s.site_images, s.site_images_pending, s.site_images_status, s.site_images_reason, s.site_map, s.listed_map, s.admin_id,
+                       um.name as admin_name,
+                       (SELECT COUNT(*) FROM plots p WHERE p.site_id = s.id AND p.isActive = 1) AS plot_count");
         $this->db->from('sites s');
         $this->db->join('user_master um', 'um.id = s.admin_id', 'left');
         $this->db->where('s.isActive', 1);
@@ -570,19 +571,19 @@ class SuperAdmin extends My_Controller
 
         /* ---------------- DATA QUERY ---------------- */
 
-        $this->db->select('id, name, location, area, total_plots, site_images, site_map, listed_map, site_images_status');
-        $this->db->from('sites');
-        $this->db->where('admin_id', (int) $admin_id);
-        $this->db->where('isActive', 1);
+        $this->db->select("s.id, s.name, s.location, s.area, s.total_plots, s.site_images, s.site_images_pending, s.site_images_status, (SELECT COUNT(*) FROM plots p WHERE p.site_id = s.id AND p.isActive = 1) AS plot_count");
+        $this->db->from('sites s');
+        $this->db->where('s.admin_id', (int) $admin_id);
+        $this->db->where('s.isActive', 1);
 
         if ($search !== '') {
             $this->db->group_start()
-                ->like('name', $search)
-                ->or_like('location', $search)
+                ->like('s.name', $search)
+                ->or_like('s.location', $search)
                 ->group_end();
         }
 
-        $this->db->order_by('id', 'DESC');
+        $this->db->order_by('s.id', 'DESC');
         $this->db->limit($limit, $offset);
 
         $sites = $this->db->get()->result();
@@ -672,7 +673,7 @@ class SuperAdmin extends My_Controller
         }
 
         $site = $this->db
-            ->select('s.id, s.name, s.location, s.area, s.total_plots, s.site_images, s.site_map, s.listed_map, s.admin_id, um.name as admin_name')
+            ->select('s.id, s.name, s.location, s.area, s.total_plots, s.site_images, s.site_images_pending, s.site_map, s.listed_map, s.admin_id, um.name as admin_name')
             ->from('sites s')
             ->join('user_master um', 'um.id = s.admin_id', 'left')
             ->where('s.id', $site_id)
@@ -691,7 +692,13 @@ class SuperAdmin extends My_Controller
         if (!empty($site->site_images)) {
             $decoded = json_decode($site->site_images, true);
             if (is_array($decoded)) {
-                $images = $decoded;
+                $images = array_merge($images, $decoded);
+            }
+        }
+        if (!empty($site->site_images_pending)) {
+            $decoded_pending = json_decode($site->site_images_pending, true);
+            if (is_array($decoded_pending)) {
+                $images = array_merge($images, $decoded_pending);
             }
         }
 
@@ -712,6 +719,10 @@ class SuperAdmin extends My_Controller
             ->order_by('id', 'DESC')
             ->get()
             ->result();
+
+        // Keep total_plots in detail response aligned to live active plot count.
+        $site->plot_count = count($plots);
+        $site->total_plots = $site->plot_count;
 
         echo json_encode([
             'status' => true,
@@ -738,7 +749,7 @@ class SuperAdmin extends My_Controller
         }
 
         $site = $this->db
-            ->select('id, site_images, site_images_status')
+            ->select('id, site_images, site_images_pending, site_images_status')
             ->where('id', $site_id)
             ->where('isActive', 1)
             ->get('sites')
@@ -750,11 +761,11 @@ class SuperAdmin extends My_Controller
         }
 
         $has_images = !empty($site->site_images) && $site->site_images !== 'NULL' && $site->site_images !== 'null';
-        $images_approved = (($site->site_images_status ?? '') === 'approve');
-        if (!$has_images || !$images_approved) {
+        $has_pending_images = !empty($site->site_images_pending) && $site->site_images_pending !== 'NULL' && $site->site_images_pending !== 'null';
+        if (!$has_images && !$has_pending_images) {
             echo json_encode([
                 'status' => false,
-                'message' => 'Image is not uploaded/approved. Please upload and approve site images first.'
+                'message' => 'Image is not uploaded. Please upload site images first.'
             ]);
             return;
         }
@@ -948,6 +959,77 @@ class SuperAdmin extends My_Controller
 
         $this->load->helper('download');
         force_download($file_path, NULL);
+    }
+
+    public function plans()
+    {
+        $data['plans'] = $this->db->where('isActive', 1)->get('plans')->result();
+
+        $this->load->view('superadmin/header');
+        $this->load->view('superadmin/plans_view', $data);
+        $this->load->view('superadmin/footer');
+    }
+
+    public function add_plan()
+    {
+        $this->form_validation->set_rules('name', 'Plan Name', 'required|trim');
+        $this->form_validation->set_rules('price', 'Price', 'required|numeric');
+        $this->form_validation->set_rules('duration_days', 'Duration Days', 'required|integer');
+        $this->form_validation->set_rules('description', 'Description', 'required|trim');
+
+        if ($this->form_validation->run() === FALSE) {
+            $this->session->set_flashdata('error', validation_errors());
+            redirect('superadmin/plans');
+            return;
+        }
+
+        $data = [
+            'name' => $this->input->post('name'),
+            'price' => floatval($this->input->post('price')),
+            'duration_days' => intval($this->input->post('duration_days')),
+            'description' => $this->input->post('description'),
+            'created_at' => date('Y-m-d H:i:s'),
+            'isActive' => 1
+        ];
+
+        $this->db->insert('plans', $data);
+        $this->session->set_flashdata('success', 'Plan added successfully!');
+        redirect('superadmin/plans');
+    }
+
+    public function delete_plan($id)
+    {
+        $id = (int)$id;
+        $this->db->where('id', $id)->update('plans', ['isActive' => 0]);
+        $this->session->set_flashdata('success', 'Plan deleted successfully!');
+        redirect('superadmin/plans');
+    }
+
+    public function edit_plan()
+    {
+        $this->form_validation->set_rules('id', 'Plan ID', 'required|integer');
+        $this->form_validation->set_rules('name', 'Plan Name', 'required|trim');
+        $this->form_validation->set_rules('price', 'Price', 'required|numeric');
+        $this->form_validation->set_rules('duration_days', 'Duration Days', 'required|integer');
+        $this->form_validation->set_rules('description', 'Description', 'required|trim');
+
+        if ($this->form_validation->run() === FALSE) {
+            $this->session->set_flashdata('error', validation_errors());
+            redirect('superadmin/plans');
+            return;
+        }
+
+        $id = (int)$this->input->post('id');
+        $data = [
+            'name' => $this->input->post('name'),
+            'price' => floatval($this->input->post('price')),
+            'duration_days' => intval($this->input->post('duration_days')),
+            'description' => $this->input->post('description')
+        ];
+
+        $this->db->where('id', $id)->update('plans', $data);
+        $this->session->set_flashdata('success', 'Plan updated successfully!');
+        redirect('superadmin/plans');
     }
 
 }

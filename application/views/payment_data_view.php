@@ -25,10 +25,10 @@
 
             <!-- Card Header -->
             <div class="card-header bg-white border-bottom py-3">
-                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 payment-header-row">
 
                     <!-- Left: Title -->
-                    <div class="d-flex align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2 payment-title-wrap">
                         <div class="header-icon-box">
                             <i class="bx bx-money"></i>
                         </div>
@@ -39,7 +39,7 @@
                     </div>
 
                     <!-- Right: Search + Print -->
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <div class="d-flex align-items-center gap-2 flex-wrap payment-actions">
 
                         <!-- Search -->
                         <div class="search-box position-relative">
@@ -48,14 +48,12 @@
                                 type="text"
                                 id="serchPlot"
                                 class="form-control search-input"
-                                placeholder="Search buyer..."
-                            >
+                                placeholder="Search buyer...">
                             <input
                                 type="hidden"
                                 id="buyer_id"
                                 name="buyer_id"
-                                value="<?= isset($buyer_id) ? $buyer_id : '' ?>"
-                            >
+                                value="<?= isset($buyer_id) ? $buyer_id : '' ?>">
                         </div>
 
                         <!-- Print Button -->
@@ -101,20 +99,44 @@
                     </div>
                 </div>
 
+                <div class="emi-summary-wrap">
+                    <div class="emi-card">
+                        <div class="emi-card-label">Total Installments</div>
+                        <div class="emi-card-value" id="statTotalInstallments">0</div>
+                    </div>
+                    <div class="emi-card">
+                        <div class="emi-card-label">Remaining Installments</div>
+                        <div class="emi-card-value" id="statRemainingInstallments">0</div>
+                    </div>
+                    <div class="emi-card">
+                        <div class="emi-card-label">Pending Amount</div>
+                        <div class="emi-card-value" id="statPendingAmount">INR 0.00</div>
+                    </div>
+                    <div class="emi-card">
+                        <div class="emi-card-label">Receiving Amount</div>
+                        <div class="emi-card-value" id="statReceivingAmount">INR 0.00</div>
+                    </div>
+                    <div class="emi-card">
+                        <div class="emi-card-label">Next Installment</div>
+                        <div class="emi-card-value" id="statNextInstallmentDate">-</div>
+                        <div class="emi-card-subvalue" id="statNextInstallmentAmount">INR 0.00</div>
+                    </div>
+                </div>
+
                 <!-- Table Responsive -->
-                <div class="table-responsive">
+                <div class="table-responsive payment-table-wrap">
                     <table class="table payment-table mb-0" id="paymentTable">
 
                         <thead>
                             <tr>
-                                <th>#</th>
-                                <th>User Name</th>
-                                <th>Buyer Name</th>
-                                <th>Site Name</th>
-                                <th>Plot Number</th>
-                                <th>Paid At</th>
-                                <th>Paid Amount</th>
-                                <th class="text-center">Actions</th>
+                                <th class="text-dark">#</th>
+                                <th class="text-dark">User Name</th>
+                                <th class="text-dark">Buyer Name</th>
+                                <th class="text-dark">Site Name</th>
+                                <th class="text-dark">Plot Number</th>
+                                <th class="text-dark">Paid At</th>
+                                <th class="text-dark text-center">Paid Amount</th>
+                                <th class="text-center text-dark">Actions</th>
                             </tr>
                         </thead>
 
@@ -193,7 +215,6 @@
 
 <!-- ===================== STYLES ===================== -->
 <style>
-
     /* ===== Header Icon ===== */
     .header-icon-box {
         width: 42px;
@@ -232,6 +253,10 @@
         width: 230px;
         transition: all 0.2s;
         background: #f8f9ff;
+    }
+
+    .payment-actions {
+        justify-content: flex-end;
     }
 
     .search-input:focus {
@@ -277,10 +302,46 @@
         padding: 14px 24px;
         border-right: 1px solid #eef0f8;
         flex: 1;
+        min-width: 0;
     }
 
     .stat-item:last-child {
         border-right: none;
+    }
+
+    .emi-summary-wrap {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        padding: 14px;
+        border-bottom: 1px solid #eef0f8;
+        background: #fbfcff;
+    }
+
+    .emi-card {
+        background: #ffffff;
+        border: 1px solid #e6e9f4;
+        border-radius: 10px;
+        padding: 12px;
+        min-height: 86px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .emi-card-label {
+        font-size: 11px;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        margin-bottom: 4px;
+    }
+
+    .emi-card-value {
+        font-size: 18px;
+        font-weight: 700;
+        color: #0f3460;
+        line-height: 1.2;
     }
 
     .stat-icon {
@@ -294,9 +355,20 @@
         flex-shrink: 0;
     }
 
-    .stat-icon.blue   { background: #e8f0fe; color: #1a73e8; }
-    .stat-icon.green  { background: #e6f4ea; color: #34a853; }
-    .stat-icon.orange { background: #fef3e2; color: #f9ab00; }
+    .stat-icon.blue {
+        background: #e8f0fe;
+        color: #1a73e8;
+    }
+
+    .stat-icon.green {
+        background: #e6f4ea;
+        color: #34a853;
+    }
+
+    .stat-icon.orange {
+        background: #fef3e2;
+        color: #f9ab00;
+    }
 
     .stat-val {
         font-size: 16px;
@@ -338,6 +410,51 @@
         background-color: #f0f4ff !important;
     }
 
+    .payment-table tbody tr.installment-pending-row td {
+        background: #fff9e8;
+    }
+
+    .payment-table tbody tr.installment-pending-row:hover td {
+        background: #fff3d1 !important;
+    }
+
+    .payment-table tbody tr.installment-approve-row td {
+        background: #ebfff4;
+    }
+
+    .payment-table tbody tr.installment-approve-row:hover td {
+        background: #ddfbe9 !important;
+    }
+
+    .payment-table tbody tr.installment-reject-row td {
+        background: #ffeef0;
+    }
+
+    .payment-table tbody tr.installment-reject-row:hover td {
+        background: #ffdfe3 !important;
+    }
+
+    .payment-table tbody tr.installment-request-row td {
+        background: #eaf4ff;
+    }
+
+    .payment-table tbody tr.installment-request-row:hover td {
+        background: #dbeeff !important;
+    }
+
+    .payment-table tbody tr.payment-mode-row-cash td,
+    .payment-table tbody tr.payment-mode-row-emi td {
+        border-left: none !important;
+    }
+
+    .payment-table tbody tr.payment-mode-row-cash td:first-child {
+        box-shadow: inset 3px 0 0 #22c55e;
+    }
+
+    .payment-table tbody tr.payment-mode-row-emi td:first-child {
+        box-shadow: inset 3px 0 0 #3b82f6;
+    }
+
     .payment-table tbody td {
         padding: 12px 14px;
         font-size: 13px;
@@ -345,6 +462,20 @@
         vertical-align: middle;
         border: none;
         border-bottom: 1px solid #f0f2fa;
+        transition: background-color 0.18s ease;
+    }
+
+    .payment-table tbody tr:nth-child(even):not(.installment-approve-row):not(.installment-reject-row):not(.installment-request-row):not(.installment-pending-row) td {
+        background: #fcfdff;
+    }
+
+    .payment-table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .payment-table {
+        min-width: 920px;
     }
 
     /* Index badge */
@@ -382,8 +513,13 @@
         flex-shrink: 0;
     }
 
-    .av-blue   { background: linear-gradient(135deg,#1a1a2e,#0f3460); }
-    .av-purple { background: linear-gradient(135deg,#6a0dad,#9b59b6); }
+    .av-blue {
+        background: linear-gradient(135deg, #1a1a2e, #0f3460);
+    }
+
+    .av-purple {
+        background: linear-gradient(135deg, #6a0dad, #9b59b6);
+    }
 
     .name-text {
         font-size: 13px;
@@ -422,11 +558,112 @@
         color: #27ae60;
     }
 
+    .amount-cell.amount-cash {
+        color: #15803d;
+    }
+
+    .amount-cell.amount-emi {
+        color: #1d4ed8;
+    }
+
+    .payment-mode-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 6px;
+        margin-right: 5px;
+        padding: 3px 9px;
+        border-radius: 12px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+        line-height: 1;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+    }
+
+    .payment-mode-chip i {
+        font-size: 12px;
+        line-height: 1;
+    }
+
+    .payment-mode-chip-cash {
+        background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%);
+        border: 1px solid #86efac;
+        color: #166534;
+    }
+
+    .payment-mode-chip-emi {
+        background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+        border: 1px solid #93c5fd;
+        color: #1e40af;
+    }
+
+    .payment-table tbody tr.payment-mode-row-cash:hover td {
+        background-color: #f4fff8 !important;
+    }
+
+    .payment-table tbody tr.payment-mode-row-emi:hover td {
+        background-color: #f3f8ff !important;
+    }
+
+    .payment-type-tag {
+        display: inline-block;
+        margin-top: 5px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background: #fff4d6;
+        border: 1px solid #f4c86a;
+        color: #9a6700;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+    }
+
+    .installment-seq-tag {
+        display: inline-block;
+        margin-top: 5px;
+        margin-right: 5px;
+        padding: 2px 9px;
+        border-radius: 12px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+        text-transform: none;
+        border: 1px solid transparent;
+        line-height: 1.25;
+    }
+
+    .installment-seq-emi {
+        background: #eef4ff;
+        border-color: #bfdbfe;
+        color: #1d4ed8;
+    }
+
+    .installment-seq-cash {
+        background: #ecfdf3;
+        border-color: #a7f3d0;
+        color: #166534;
+    }
+
+    .emi-card-subvalue {
+        font-size: 12px;
+        color: #4b5563;
+        margin-top: 2px;
+        font-weight: 600;
+    }
+
     /* Date */
     .date-cell {
         font-size: 12px;
         color: #555;
         white-space: nowrap;
+    }
+
+    .date-cell.paid-date {
+        color: #0f9d58;
+        font-weight: 700;
     }
 
     /* Action buttons */
@@ -460,7 +697,7 @@
         background: #1a73e8;
         color: #fff;
         transform: translateY(-1px);
-        box-shadow: 0 3px 8px rgba(26,115,232,0.3);
+        box-shadow: 0 3px 8px rgba(26, 115, 232, 0.3);
     }
 
     .btn-pdf {
@@ -472,7 +709,7 @@
         background: #e94560;
         color: #fff;
         transform: translateY(-1px);
-        box-shadow: 0 3px 8px rgba(233,69,96,0.3);
+        box-shadow: 0 3px 8px rgba(233, 69, 96, 0.3);
     }
 
     /* ===== Empty State ===== */
@@ -518,8 +755,13 @@
     }
 
     @keyframes shimmer {
-        0%   { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
+        0% {
+            background-position: 200% 0;
+        }
+
+        100% {
+            background-position: -200% 0;
+        }
     }
 
     /* ===== Pagination ===== */
@@ -551,4 +793,150 @@
         border-color: #eee;
     }
 
+    @media (max-width: 1200px) {
+        .emi-summary-wrap {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 768px) {
+        .card-header {
+            padding: 12px !important;
+        }
+
+        .payment-header-row {
+            align-items: flex-start !important;
+        }
+
+        .payment-title-wrap {
+            width: 100%;
+        }
+
+        .payment-title-wrap h5 {
+            font-size: 16px;
+        }
+
+        .payment-title-wrap small {
+            font-size: 11px;
+        }
+
+        .payment-actions {
+            width: 100%;
+            justify-content: flex-start;
+            gap: 8px !important;
+        }
+
+        .search-box {
+            flex: 1 1 100%;
+            width: 100%;
+        }
+
+        .search-input {
+            width: 100%;
+            height: 36px;
+            font-size: 12px;
+        }
+
+        .btn-print {
+            width: 100%;
+            text-align: center;
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+
+        .stats-strip {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .stat-item {
+            padding: 12px;
+            border-right: none;
+            border-bottom: 1px solid #eef0f8;
+        }
+
+        .stat-item:nth-child(odd) {
+            border-right: 1px solid #eef0f8;
+        }
+
+        .stat-item:last-child {
+            grid-column: 1 / -1;
+            border-right: none;
+            border-bottom: none;
+        }
+
+        .stat-val {
+            font-size: 15px;
+        }
+
+        .stat-lbl {
+            font-size: 10px;
+        }
+
+        .emi-summary-wrap {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            padding: 10px;
+            gap: 10px;
+        }
+
+        .emi-card {
+            min-height: 78px;
+            padding: 10px;
+        }
+
+        .emi-card-value {
+            font-size: 16px;
+        }
+
+        .payment-table thead th,
+        .payment-table tbody td {
+            font-size: 12px;
+            padding: 10px 11px;
+        }
+
+        .custom-pagination {
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        #paginationInfo {
+            width: 100%;
+            text-align: center;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .header-icon-box {
+            width: 36px;
+            height: 36px;
+            font-size: 17px;
+        }
+
+        .stats-strip {
+            grid-template-columns: 1fr;
+        }
+
+        .stat-item,
+        .stat-item:nth-child(odd),
+        .stat-item:last-child {
+            grid-column: auto;
+            border-right: none;
+        }
+
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+
+        .emi-summary-wrap {
+            grid-template-columns: 1fr;
+        }
+
+        .emi-card-label {
+            font-size: 10px;
+        }
+
+        .emi-card-value {
+            font-size: 15px;
+        }
+    }
 </style>

@@ -1,4 +1,5 @@
-<div class="page-wrapper">
+<?php $this->load->view('partials/admin_form_theme'); ?>
+<div class="page-wrapper admin-form-page">
     <div class="page-content">
 
         <!-- Breadcrumb -->
@@ -18,7 +19,7 @@
         </div>
 
         <!-- Edit Site Card -->
-        <div class="card">
+        <div class="card admin-form-card">
             <div class="card-body p-4">
                 <h5 class="card-title">Edit Site</h5>
                 <hr>
@@ -32,61 +33,57 @@
                                 <!-- Site Name -->
                                 <div class="mb-3">
                                     <label for="siteName" class="form-label">Site Name</label>
-                                    <input 
-                                        type="text" 
-                                        name="site_name" 
-                                        class="form-control" 
-                                        id="siteName" 
-                                        value="<?= isset($site->name) ? htmlspecialchars($site->name) : ''; ?>" 
-                                        placeholder="Enter site name" 
-                                        required
-                                    >
+                                    <input
+                                        type="text"
+                                        name="site_name"
+                                        class="form-control"
+                                        id="siteName"
+                                        value="<?= isset($site->name) ? htmlspecialchars($site->name) : ''; ?>"
+                                        placeholder="Enter site name"
+                                        required>
                                     <div class="invalid-feedback">Please enter the site name.</div>
                                 </div>
 
                                 <!-- Location -->
                                 <div class="mb-3">
                                     <label for="siteLocation" class="form-label">Location</label>
-                                    <input 
-                                        type="text" 
-                                        name="location" 
-                                        class="form-control" 
-                                        id="siteLocation" 
-                                        value="<?= isset($site->location) ? htmlspecialchars($site->location) : ''; ?>" 
-                                        placeholder="Enter site location" 
-                                        required
-                                    >
+                                    <input
+                                        type="text"
+                                        name="location"
+                                        class="form-control"
+                                        id="siteLocation"
+                                        value="<?= isset($site->location) ? htmlspecialchars($site->location) : ''; ?>"
+                                        placeholder="Enter site location"
+                                        required>
                                     <div class="invalid-feedback">Please enter the site location.</div>
                                 </div>
 
                                 <!-- Area -->
                                 <div class="mb-3">
                                     <label for="siteArea" class="form-label">Area</label>
-                                    <input 
-                                        type="text" 
-                                        name="area" 
-                                        class="form-control" 
-                                        id="siteArea" 
-                                        value="<?= isset($site->area) ? htmlspecialchars($site->area) : ''; ?>" 
-                                        placeholder="Enter total area (e.g. 1200 sq.ft)" 
-                                        required
-                                    >
+                                    <input
+                                        type="text"
+                                        name="area"
+                                        class="form-control"
+                                        id="siteArea"
+                                        value="<?= isset($site->area) ? htmlspecialchars($site->area) : ''; ?>"
+                                        placeholder="Enter total area (e.g. 1200 sq.ft)"
+                                        required>
                                     <div class="invalid-feedback">Please enter the total area.</div>
                                 </div>
 
                                 <!-- Total Plots -->
                                 <div class="mb-3">
                                     <label for="totalPlots" class="form-label">Total Plots</label>
-                                    <input 
-                                        type="number" 
-                                        name="total_plots" 
-                                        class="form-control" 
-                                        id="totalPlots" 
-                                        value="<?= isset($site->total_plots) ? htmlspecialchars($site->total_plots) : ''; ?>" 
-                                        placeholder="Enter total plots" 
-                                        min="1" 
-                                        required
-                                    >
+                                    <input
+                                        type="number"
+                                        name="total_plots"
+                                        class="form-control"
+                                        id="totalPlots"
+                                        value="<?= isset($site->total_plots) ? htmlspecialchars($site->total_plots) : ''; ?>"
+                                        placeholder="Enter total plots"
+                                        min="1"
+                                        required>
                                     <div class="invalid-feedback">Please enter the number of plots.</div>
                                 </div>
 
@@ -129,7 +126,7 @@
                                     <div id="siteImagesPreview" class="mt-2 d-flex flex-wrap gap-2"></div>
                                 </div>
 
-                              
+
 
                                 <!-- Submit Button -->
                                 <div class="mb-3">

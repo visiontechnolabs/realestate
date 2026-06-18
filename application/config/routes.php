@@ -1,6 +1,5 @@
-
 <?php
-defined('BASEPATH') OR exit('No direct script access allowed');
+defined('BASEPATH') or exit('No direct script access allowed');
 
 /*
 | -------------------------------------------------------------------------
@@ -52,10 +51,22 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 */
 $route['default_controller'] = 'login';
 $route['register'] = 'login/register';
+
+// ── OTP Login & Register Routes ──────────────────────
+$route['send-login-otp']      = 'login/send_login_otp';
+$route['resend-otp/(:any)']   = 'login/resend_otp/$1';
+$route['verify-login-otp']    = 'login/verify_login_otp';
+$route['sign-up']             = 'login/sign_up';
+$route['verify-register-otp'] = 'login/verify_register_otp';
+$route['forgot-password'] = 'login/forgot_password';
 $route['profile'] = 'profile';
 $route['logout'] = 'login/logout';
 $route['site'] = 'site';
 $route['inquiry'] = 'dashboard/inquiry';
+$route['fetch_inquiries'] = 'dashboard/fetch_inquiries';
+$route['add_inquiry_web'] = 'dashboard/add_inquiry_web';
+$route['update_inquiry_web'] = 'dashboard/update_inquiry_web';
+$route['get_plots_by_site'] = 'dashboard/get_plots_by_site';
 $route['attedance'] = 'dashboard/attedance';
 
 
@@ -73,36 +84,68 @@ $route['plots/(:num)'] = 'plots/index/$1';
 $route['add_plot'] = 'plots/add_plot';
 $route['plot/edit_plot/(:num)'] = 'plots/edit_plot/$1';
 $route['plots/buyer_details/(:num)'] = 'plots/buyer_details/$1';
+$route['plots/import'] = 'plots/import';
+$route['plots/download_sample_format'] = 'plots/download_sample_format';
 
 $route['users'] = 'user';
 $route['add_user'] = 'user/add_user';
 $route['add_upad'] = 'user/add_upad';
+$route['add_upad/(:num)'] = 'user/add_upad/$1';
+$route['salary'] = 'user/salary';
+$route['buyers'] = 'user/buyers';
 
 $route['edit_user/(:num)'] = 'user/edit_user/$1';
 $route['payment_data/(:num)'] = 'plots/payment_data/$1';
 // $route['profile'] = 'user/add_upad';
 
+// Super Admin Routes
+$route['superadmin'] = 'superadmin/admins';
+$route['superadmin/dashboard'] = 'dashboard/index';
 $route['superadmin/admins'] = 'superadmin/admins';
-$route['superadmin/dashboard'] = 'dashboard';
+$route['superadmin/plans'] = 'superadmin/plans';
+$route['superadmin/add_plan'] = 'superadmin/add_plan';
+$route['superadmin/edit_plan'] = 'superadmin/edit_plan';
+$route['superadmin/delete_plan/(:num)'] = 'superadmin/delete_plan/$1';
 $route['superadmin/sites'] = 'superadmin/sites';
+$route['superadmin/profile'] = 'profile/index';
+$route['superadmin/admin_sites'] = 'superadmin/admin_sites';
+$route['superadmin/admin_plots'] = 'superadmin/admin_plots';
+$route['superadmin/login_as_admin/(:num)'] = 'superadmin/login_as_admin/$1';
 $route['superadmin/get_admins'] = 'superadmin/get_admins';
 $route['superadmin/get_admin_detail/(:num)'] = 'superadmin/get_admin_detail/$1';
+$route['superadmin/get_admin_sites/(:num)'] = 'superadmin/get_admin_sites/$1';
+$route['superadmin/get_admin_plots/(:num)'] = 'superadmin/get_admin_plots/$1';
 $route['superadmin/get_all_sites'] = 'superadmin/get_all_sites';
+
+// Admin Plans Routes
+$route['dashboard/plans'] = 'dashboard/plans';
+$route['dashboard/verify_payment'] = 'dashboard/verify_payment';
 $route['superadmin/get_site_detail/(:num)'] = 'superadmin/get_site_detail/$1';
 $route['superadmin/upload_site_map'] = 'superadmin/upload_site_map';
 $route['superadmin/site_images_pending'] = 'superadmin/site_images_pending';
 $route['superadmin/site_images_action'] = 'superadmin/site_images_action';
+$route['superadmin/download_site_image/(:num)'] = 'superadmin/download_site_image/$1';
 $route['superadmin/change_admin_status/(:num)'] = 'superadmin/change_admin_status/$1';
 $route['superadmin/admin_sites/(:num)'] = 'superadmin/admin_sites/$1';
 $route['superadmin/admin_plots/(:num)'] = 'superadmin/admin_plots/$1';
 
+// Optional kebab-case aliases for Super Admin URLs
+$route['super-admin'] = 'superadmin/admins';
+$route['super-admin/dashboard'] = 'dashboard/index';
+$route['super-admin/admins'] = 'superadmin/admins';
+$route['super-admin/sites'] = 'superadmin/sites';
+$route['super-admin/profile'] = 'profile/index';
 
 
-
+$route['pages/delete_account'] = 'pages/delete_account';
+$route['pages/terms_conditions'] = 'pages/terms_conditions';
+$route['pages/privacy_policy'] = 'pages/privacy_policy';
 
 
 // api Route
-$route['api/login'] = 'api/login';
+$route['api/login'] = 'api/send_login_otp';
+$route['api/verify-otp'] = 'api/verify_login_otp';
+
 $route['api/logout'] = 'api/logout';
 $route['api/dashboard'] = 'api/dashboard';
 
@@ -125,6 +168,9 @@ $route['api/inquiry_search'] = 'api/inquiry_search';
 $route['api/add_attendance'] = 'api/add_attendance';
 $route['api/get_attendance'] = 'api/get_attendance';
 $route['api/get_sallary'] = 'api/get_sallary';
+$route['api/delete_account']['delete'] = 'api/delete_account';
+$route['api/terms_conditions'] = 'api/terms_conditions';
+$route['api/privacy_policy'] = 'api/privacy_policy';
 
 
 

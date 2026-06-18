@@ -5,6 +5,7 @@ defined('BASEPATH') or exit('No direct script access allowed');
 use \Firebase\JWT\JWT;
 
 use \Firebase\JWT\Key;
+
 require_once FCPATH . 'vendor/autoload.php';
 
 
@@ -32,40 +33,136 @@ class Api extends CI_Controller
 
         header("Access-Control-Allow-Origin: *");
 
-        header("Content-Type: application/json; charset=UTF-8");
+        // header("Content-Type: application/json; charset=UTF-8");
         $this->load->library('email');
         $this->load->library(['form_validation']);
-
-
-
     }
-    public function login()
+    public function send_login_otp()
     {
-        header('Content-Type: application/json');
+        $this->output->set_content_type('application/json');
 
         $input_data = json_decode($this->input->raw_input_stream, true);
-        $mobile = trim($input_data['mobile'] ?? '');
-        $password = trim($input_data['password'] ?? '');
 
-        if (empty($mobile) || empty($password)) {
+        $mobile = trim($input_data['mobile'] ?? '');
+
+        if (empty($mobile)) {
             return $this->output
                 ->set_status_header(400)
                 ->set_output(json_encode([
                     'status' => false,
                     'code' => 400,
-                    'message' => 'Mobile and password are required',
+                    'message' => 'Mobile number is required'
+                ]));
+        }
+
+        $user = $this->db
+            ->where('mobile', $mobile)
+            ->get('users')
+            ->row();
+
+        if (!$user) {
+            return $this->output
+                ->set_status_header(404)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 404,
+                    'message' => 'User not found'
+                ]));
+        }
+
+        if ($user->isActive == 0) {
+            return $this->output
+                ->set_status_header(400)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 400,
+                    'message' => 'Your account is not active. Please contact admin.'
+                ]));
+        }
+
+        // Production
+        $otp = rand(100000, 999999);
+
+        // Testing
+        // $otp = 123456;
+
+        // Delete old OTP
+        $this->db
+            ->where('mobile', $mobile)
+            ->delete('login_otps');
+
+        // Save OTP
+        $this->db->insert('login_otps', [
+            'mobile' => $mobile,
+            'otp' => $otp,
+            'expires_at' => date('Y-m-d H:i:s', time() + (30 * 60)),
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+
+        // Send SMS
+        $this->send_otp_via_sms($mobile, $otp);
+
+        return $this->output
+            ->set_status_header(200)
+            ->set_output(json_encode([
+                'status' => true,
+                'code' => 200,
+                'message' => 'OTP sent successfully',
+                'masked_mobile' => '******' . substr($mobile, -4),
+
+                // Uncomment for testing
+                // 'otp' => $otp
+            ]));
+    }
+    public function verify_login_otp()
+    {
+        $this->output->set_content_type('application/json');
+
+        $input_data = json_decode($this->input->raw_input_stream, true);
+
+        $mobile = trim($input_data['mobile'] ?? '');
+        $otp = trim($input_data['otp'] ?? '');
+
+        if (empty($mobile) || empty($otp)) {
+            return $this->output
+                ->set_status_header(400)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 400,
+                    'message' => 'Mobile and OTP are required',
                     'data' => null
                 ]));
         }
 
-        $user = $this->db->get_where('users', ['mobile' => $mobile])->row();
+        $otp_row = $this->db
+            ->where('mobile', $mobile)
+            ->where('otp', $otp)
+            ->where('expires_at >=', date('Y-m-d H:i:s'))
+            ->get('login_otps')
+            ->row();
 
-        if (!$user) {
+        if (!$otp_row) {
             return $this->output
                 ->set_status_header(400)
                 ->set_output(json_encode([
                     'status' => false,
                     'code' => 400,
+                    'message' => 'Invalid or expired OTP',
+                    'data' => null
+                ]));
+        }
+
+        $user = $this->db
+            ->where('mobile', $mobile)
+            ->get('users')
+            ->row();
+
+        if (!$user) {
+            return $this->output
+                ->set_status_header(404)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 404,
                     'message' => 'User not found',
                     'data' => null
                 ]));
@@ -82,23 +179,17 @@ class Api extends CI_Controller
                 ]));
         }
 
-        if (md5($password) !== $user->password) {
-            return $this->output
-                ->set_status_header(400)
-                ->set_output(json_encode([
-                    'status' => false,
-                    'code' => 400,
-                    'message' => 'Invalid password',
-                    'data' => null
-                ]));
-        }
+        // Delete Used OTP
+        $this->db
+            ->where('mobile', $mobile)
+            ->delete('login_otps');
 
+        // Profile Image
         $profile_image = !empty($user->profile_image)
             ? (strpos($user->profile_image, 'uploads/') === false
                 ? base_url('uploads/users/' . $user->profile_image)
                 : base_url($user->profile_image))
             : base_url('uploads/users/default.png');
-
 
         $token = $this->generate_jwt($user);
 
@@ -112,13 +203,89 @@ class Api extends CI_Controller
                     'token' => $token,
                     'user' => [
                         'id' => $user->id,
+                        'admin_id' => $user->admin_id,
                         'name' => $user->name,
+                        'email' => $user->email,
                         'mobile' => $user->mobile,
-                        'email' => $user->email ?? '',
+                        'location' => $user->location,
+                        'bio' => $user->bio,
+                        'daily_salary' => $user->daily_salary,
+                        'isActive' => $user->isActive,
+                        'created_at' => $user->created_at,
                         'profile_image' => $profile_image
                     ]
                 ]
             ]));
+    }
+    public function send_otp_via_sms($mobileNo, $otp)
+    {
+
+        $message = "Hi $mobileNo\n\nYour Verification OTP is $otp Do not share this OTP with anyone for security reasons.\n\nRegards\nOMKARENT";
+
+
+
+        $params = [
+
+            'user' => 'Fitcketsp',
+
+            'key' => '81a6b2f99cXX',
+
+            'mobile' => '91' . $mobileNo,
+
+            'message' => $message,
+
+            'senderid' => 'OENTER',
+
+            'accusage' => '1',
+
+            'entityid' => '1401487200000053882',
+
+            'tempid' => '1407168611506367587'
+
+        ];
+
+
+
+        $url = 'http://mobicomm.dove-sms.com/submitsms.jsp?' . http_build_query($params);
+
+
+
+        $ch = curl_init();
+
+        curl_setopt($ch, CURLOPT_URL, $url);
+
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+        $response = curl_exec($ch);
+
+
+
+        if (curl_errno($ch)) {
+
+            log_message('error', 'OTP SMS cURL Error: ' . curl_error($ch));
+
+            curl_close($ch);
+
+            return false;
+        }
+
+
+
+        curl_close($ch);
+
+        log_message('info', "OTP sent to $mobileNo. Response: $response");
+
+        // echo "<pre>";
+
+        // print_r($response);
+
+        // exit;
+
+        // redirect('provider/dashboard');
+
+
+
+        return $response;
     }
 
 
@@ -541,65 +708,65 @@ class Api extends CI_Controller
 
 
 
-   public function get_plots($site_id = null)
-{
-    header('Content-Type: application/json');
+    public function get_plots($site_id = null)
+    {
+        header('Content-Type: application/json');
 
-    // 1️⃣ Check site_id
-    if (empty($site_id) || !is_numeric($site_id)) {
-        return $this->output
-            ->set_status_header(400)
-            ->set_output(json_encode([
-                'status' => false,
-                'code' => 400,
-                'message' => 'Missing or invalid site_id in URL',
-                'data' => []
-            ]));
-    }
+        // 1️⃣ Check site_id
+        if (empty($site_id) || !is_numeric($site_id)) {
+            return $this->output
+                ->set_status_header(400)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 400,
+                    'message' => 'Missing or invalid site_id in URL',
+                    'data' => []
+                ]));
+        }
 
-    // 2️⃣ Validate Token
-    $authHeader = $this->input->get_request_header('Authorization', TRUE);
-    $token = null;
+        // 2️⃣ Validate Token
+        $authHeader = $this->input->get_request_header('Authorization', TRUE);
+        $token = null;
 
-    if ($authHeader && preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
-        $token = $matches[1];
-    }
+        if ($authHeader && preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
+            $token = $matches[1];
+        }
 
-    $decoded = $this->verify_jwt($token);
-    if (!$decoded || empty($decoded->data->id)) {
-        return $this->output
-            ->set_status_header(400)
-            ->set_output(json_encode([
-                'status' => false,
-                'code' => 400,
-                'message' => 'Invalid token or user ID missing',
-                'data' => null
-            ]));
-    }
+        $decoded = $this->verify_jwt($token);
+        if (!$decoded || empty($decoded->data->id)) {
+            return $this->output
+                ->set_status_header(400)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 400,
+                    'message' => 'Invalid token or user ID missing',
+                    'data' => null
+                ]));
+        }
 
-    $user_id = (int) $decoded->data->id;
+        $user_id = (int) $decoded->data->id;
 
-    // 3️⃣ Get admin_id of user
-    $user = $this->db->select('admin_id')
-        ->where('id', $user_id)
-        ->get('users')
-        ->row();
+        // 3️⃣ Get admin_id of user
+        $user = $this->db->select('admin_id')
+            ->where('id', $user_id)
+            ->get('users')
+            ->row();
 
-    if (!$user) {
-        return $this->output
-            ->set_status_header(400)
-            ->set_output(json_encode([
-                'status' => false,
-                'code' => 400,
-                'message' => 'User not found',
-                'data' => []
-            ]));
-    }
+        if (!$user) {
+            return $this->output
+                ->set_status_header(400)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 400,
+                    'message' => 'User not found',
+                    'data' => []
+                ]));
+        }
 
-    $admin_id = (int) $user->admin_id;
+        $admin_id = (int) $user->admin_id;
 
-    // 4️⃣ Fetch plots
-    $this->db->select('
+        // 4️⃣ Fetch plots
+        $this->db->select('
         p.id,
         p.plot_number,
         p.size,
@@ -611,291 +778,303 @@ class Api extends CI_Controller
         p.created_at,
         s.name AS site_name
     ');
-    $this->db->from('plots p');
-    $this->db->join('sites s', 's.id = p.site_id', 'inner');
-    $this->db->join('site_assignments sa', 'sa.site_id = s.id', 'inner');
-    $this->db->where([
-        'sa.user_id' => $user_id,
-        'p.site_id' => $site_id,
-        'p.admin_id' => $admin_id,
-        's.admin_id' => $admin_id,
-        'sa.admin_id' => $admin_id,
-        'p.isActive' => 1
-    ]);
-    $this->db->order_by('p.id', 'DESC');
+        $this->db->from('plots p');
+        $this->db->join('sites s', 's.id = p.site_id', 'inner');
+        $this->db->join('site_assignments sa', 'sa.site_id = s.id', 'inner');
+        $this->db->where([
+            'sa.user_id' => $user_id,
+            'p.site_id' => $site_id,
+            'p.admin_id' => $admin_id,
+            's.admin_id' => $admin_id,
+            'sa.admin_id' => $admin_id,
+            'p.isActive' => 1
+        ]);
+        $this->db->order_by('p.id', 'DESC');
 
-    $plots = $this->db->get()->result_array();
+        $plots = $this->db->get()->result_array();
 
-    // ---------------- NEW LOGIC START ----------------
-    foreach ($plots as &$plot) {
+        // ---------------- NEW LOGIC START ----------------
+        foreach ($plots as &$plot) {
 
-        // Default values
+            // Default values
+            $plot['is_sold_by_login_user'] = false;
+            $plot['sold_by_user_name'] = null;
+
+            if (strtolower($plot['status']) === 'sold') {
+
+                // Fetch buyer
+                $buyer = $this->db
+                    ->where('plot_id', $plot['id'])
+                    ->where('admin_id', $admin_id)
+                    ->where('isActive', 1)
+                    ->order_by('id', 'DESC')
+                    ->get('buyer')
+                    ->row_array();
+
+                if (!empty($buyer)) {
+
+                    // Check sold by login user
+                    if ((int) $buyer['user_id'] === $user_id) {
+                        $plot['is_sold_by_login_user'] = true;
+                    } else {
+
+                        // Fetch user name who sold
+                        $sold_user = $this->db
+                            ->select('name')
+                            ->where('id', $buyer['user_id'])
+                            ->get('users')
+                            ->row();
+
+                        $plot['sold_by_user_name'] = $sold_user->name ?? 'Unknown';
+                    }
+                }
+            }
+        }
+        // ---------------- NEW LOGIC END ----------------
+
+        // 5️⃣ Fetch site details
+        $this->db->select('s.id, s.name, s.location, s.area, s.isActive, s.site_map, s.listed_map, s.created_at');
+        $this->db->from('sites s');
+        $this->db->join('site_assignments sa', 'sa.site_id = s.id', 'inner');
+        $this->db->where([
+            's.id' => $site_id,
+            'sa.user_id' => $user_id,
+            's.admin_id' => $admin_id,
+            'sa.admin_id' => $admin_id
+        ]);
+        $site_row = $this->db->get()->row();
+
+        // 6️⃣ Build site counts
+        $site = null;
+        if ($site_row) {
+
+            $this->db->where('site_id', $site_id)
+                ->where('admin_id', $admin_id)
+                ->where_in('status', ['available', 'sold']);
+            $total_plots = (int) $this->db->count_all_results('plots');
+
+            $this->db->where('site_id', $site_id)
+                ->where('admin_id', $admin_id)
+                ->where('status', 'sold');
+            $sold_plots = (int) $this->db->count_all_results('plots');
+
+            $this->db->where('site_id', $site_id)
+                ->where('admin_id', $admin_id)
+                ->where('status', 'available');
+            $available_plots = (int) $this->db->count_all_results('plots');
+
+            $listed_map = ((int) ($site_row->listed_map ?? 0) === 1) || !empty($site_row->site_map);
+
+            $site = [
+                'id' => $site_row->id,
+                'name' => $site_row->name,
+                'location' => $site_row->location,
+                'area' => $site_row->area,
+                'isActive' => $site_row->isActive,
+                'created_at' => $site_row->created_at,
+                'total_plots' => $total_plots,
+                'available_plots' => $available_plots,
+                'sold_plots' => $sold_plots,
+                'listed_map' => $listed_map ? 1 : 0,
+                'site_map' => !empty($site_row->site_map)
+                    ? base_url($site_row->site_map)
+                    : null
+            ];
+        }
+
+        // 7️⃣ Response
+        if (!empty($plots)) {
+            return $this->output
+                ->set_status_header(200)
+                ->set_output(json_encode([
+                    'status' => true,
+                    'code' => 200,
+                    'message' => 'Plots fetched successfully',
+                    'site' => $site,
+                    'data' => $plots
+                ]));
+        } else {
+            return $this->output
+                ->set_status_header(400)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 400,
+                    'message' => 'No plots found for this site',
+                    'site' => $site,
+                    'data' => []
+                ]));
+        }
+    }
+
+
+
+    public function plot_details($plot_id = null)
+    {
+        header('Content-Type: application/json');
+
+        // ----------------- 1. Validate plot_id -----------------
+        if (empty($plot_id) || !is_numeric($plot_id)) {
+            return $this->output->set_status_header(400)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 400,
+                    'message' => 'Missing or invalid plot_id in URL',
+                    'data' => []
+                ]));
+        }
+
+        // ----------------- 2. Verify Token ----------------------
+        $authHeader = $this->input->get_request_header('Authorization', TRUE);
+        $token = null;
+
+        if ($authHeader && preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
+            $token = $matches[1];
+        }
+
+        $decoded = $this->verify_jwt($token);
+        if (!$decoded || empty($decoded->data->id)) {
+            return $this->output->set_status_header(400)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 400,
+                    'message' => 'Invalid or missing token',
+                    'data' => null
+                ]));
+        }
+
+        $user_id = (int) $decoded->data->id;
+
+        // ----------------- 3. Get Admin ID -----------------------
+        $user = $this->db->select('admin_id')
+            ->where('id', $user_id)
+            ->get('users')
+            ->row();
+
+        if (!$user) {
+            return $this->output->set_status_header(400)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 400,
+                    'message' => 'User not found',
+                    'data' => []
+                ]));
+        }
+
+        $admin_id = (int) $user->admin_id;
+
+        // ----------------- 4. Fetch Plot Details -----------------
+        $this->db->select('p.*, s.name AS site_name');
+        $this->db->from('plots p');
+        $this->db->join('sites s', 's.id = p.site_id', 'inner');
+        $this->db->join('site_assignments sa', 'sa.site_id = s.id', 'inner');
+        $this->db->where('p.id', $plot_id);
+        $this->db->where('p.admin_id', $admin_id);
+        $this->db->where('s.admin_id', $admin_id);
+        $this->db->where('sa.admin_id', $admin_id);
+        $this->db->where('sa.user_id', $user_id);
+        $this->db->where('p.isActive', 1);
+
+        $plot = $this->db->get()->row_array();
+
+        if (!$plot) {
+            return $this->output->set_status_header(400)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 400,
+                    'message' => 'No plot found with this ID or access denied',
+                    'data' => []
+                ]));
+        }
+
+        // Default boolean
         $plot['is_sold_by_login_user'] = false;
-        $plot['sold_by_user_name'] = null;
+        // $plot['sold_by_user_name'] = null;
 
+        // ----------------- 5. If Plot SOLD -----------------
         if (strtolower($plot['status']) === 'sold') {
 
-            // Fetch buyer
+            // -------- Buyer Details --------
             $buyer = $this->db
-                ->where('plot_id', $plot['id'])
+                ->where('plot_id', $plot_id)
+                ->where('admin_id', $admin_id)
                 ->where('isActive', 1)
+                ->order_by('id', 'DESC')
                 ->get('buyer')
                 ->row_array();
 
             if (!empty($buyer)) {
 
                 // Check sold by login user
-                if ((int)$buyer['user_id'] === $user_id) {
+                if ((int) $buyer['user_id'] === $user_id) {
                     $plot['is_sold_by_login_user'] = true;
-                } else {
+                }
 
-                    // Fetch user name who sold
-                    $sold_user = $this->db
-                        ->select('name')
-                        ->where('id', $buyer['user_id'])
-                        ->get('users')
-                        ->row();
+                // Get Sold By User Name
+                $sold_user = $this->db
+                    ->select('name')
+                    ->where('id', $buyer['user_id'])
+                    ->get('users')
+                    ->row();
+            }
 
-                    $plot['sold_by_user_name'] = $sold_user->name ?? 'Unknown';
+            // -------- Payment Details --------
+            $payment = [];
+            if (!empty($buyer['id'])) {
+                $payment = $this->db
+                    ->where('plot_id', $plot_id)
+                    ->where('admin_id', $admin_id)
+                    ->where('buyer_id', (int) $buyer['id'])
+                    ->order_by('id', 'DESC')
+                    ->get('payment_details')
+                    ->row_array();
+            }
+
+            $cash_logs = [];
+            $emi_logs = [];
+
+            if (!empty($payment)) {
+
+                // ===== CASH MODE =====
+                $payment_mode = strtoupper((string) ($payment['payment_mode'] ?? ''));
+                if ($payment_mode === "CASH") {
+
+                    $cash_logs = $this->db
+                        ->where('plot_id', $plot_id)
+                        ->where('buyer_id', (int) ($payment['buyer_id'] ?? 0))
+                        ->order_by('id', 'ASC')
+                        ->get('cash_payment_logs')
+                        ->result_array();
+                }
+
+                // ===== EMI MODE =====
+                if ($payment_mode === "EMI") {
+
+                    $emi_logs = $this->db
+                        ->where('payment_id', $payment['id'])
+                        ->where('buyer_id', (int) ($payment['buyer_id'] ?? 0))
+                        ->where('plot_id', $plot_id)
+                        ->order_by('month_no', 'ASC')
+                        ->get('emi_logs')
+                        ->result_array();
                 }
             }
+
+            // Attach data (keep your structure)
+            $plot['buyer_details'] = $buyer ?? null;
+            $plot['payment_details'] = $payment ?? null;
+            $plot['cash_payment_logs'] = $cash_logs ?? [];
+            $plot['emi_logs'] = $emi_logs ?? [];
         }
-    }
-    // ---------------- NEW LOGIC END ----------------
 
-    // 5️⃣ Fetch site details
-    $this->db->select('s.id, s.name, s.location, s.area, s.isActive, s.site_map, s.listed_map, s.created_at');
-    $this->db->from('sites s');
-    $this->db->join('site_assignments sa', 'sa.site_id = s.id', 'inner');
-    $this->db->where([
-        's.id' => $site_id,
-        'sa.user_id' => $user_id,
-        's.admin_id' => $admin_id,
-        'sa.admin_id' => $admin_id
-    ]);
-    $site_row = $this->db->get()->row();
-
-    // 6️⃣ Build site counts
-    $site = null;
-    if ($site_row) {
-
-        $this->db->where('site_id', $site_id)
-            ->where('admin_id', $admin_id)
-            ->where_in('status', ['available', 'sold']);
-        $total_plots = (int) $this->db->count_all_results('plots');
-
-        $this->db->where('site_id', $site_id)
-            ->where('admin_id', $admin_id)
-            ->where('status', 'sold');
-        $sold_plots = (int) $this->db->count_all_results('plots');
-
-        $this->db->where('site_id', $site_id)
-            ->where('admin_id', $admin_id)
-            ->where('status', 'available');
-        $available_plots = (int) $this->db->count_all_results('plots');
-
-        $listed_map = ((int) ($site_row->listed_map ?? 0) === 1) || !empty($site_row->site_map);
-
-        $site = [
-            'id' => $site_row->id,
-            'name' => $site_row->name,
-            'location' => $site_row->location,
-            'area' => $site_row->area,
-            'isActive' => $site_row->isActive,
-            'created_at' => $site_row->created_at,
-            'total_plots' => $total_plots,
-            'available_plots' => $available_plots,
-            'sold_plots' => $sold_plots,
-            'listed_map' => $listed_map ? 1 : 0,
-            'site_map' => !empty($site_row->site_map)
-                ? base_url($site_row->site_map)
-                : null
-        ];
-    }
-
-    // 7️⃣ Response
-    if (!empty($plots)) {
-        return $this->output
-            ->set_status_header(200)
+        // ----------------- 6. Success Response -----------------
+        return $this->output->set_status_header(200)
             ->set_output(json_encode([
                 'status' => true,
                 'code' => 200,
-                'message' => 'Plots fetched successfully',
-                'site' => $site,
-                'data' => $plots
-            ]));
-    } else {
-        return $this->output
-            ->set_status_header(400)
-            ->set_output(json_encode([
-                'status' => false,
-                'code' => 400,
-                'message' => 'No plots found for this site',
-                'site' => $site,
-                'data' => []
+                'message' => 'Plot details fetched successfully',
+                'data' => $plot
             ]));
     }
-}
-
-
-
-   public function plot_details($plot_id = null)
-{
-    header('Content-Type: application/json');
-
-    // ----------------- 1. Validate plot_id -----------------
-    if (empty($plot_id) || !is_numeric($plot_id)) {
-        return $this->output->set_status_header(400)
-            ->set_output(json_encode([
-                'status' => false,
-                'code' => 400,
-                'message' => 'Missing or invalid plot_id in URL',
-                'data' => []
-            ]));
-    }
-
-    // ----------------- 2. Verify Token ----------------------
-    $authHeader = $this->input->get_request_header('Authorization', TRUE);
-    $token = null;
-
-    if ($authHeader && preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
-        $token = $matches[1];
-    }
-
-    $decoded = $this->verify_jwt($token);
-    if (!$decoded || empty($decoded->data->id)) {
-        return $this->output->set_status_header(400)
-            ->set_output(json_encode([
-                'status' => false,
-                'code' => 400,
-                'message' => 'Invalid or missing token',
-                'data' => null
-            ]));
-    }
-
-    $user_id = (int) $decoded->data->id;
-
-    // ----------------- 3. Get Admin ID -----------------------
-    $user = $this->db->select('admin_id')
-        ->where('id', $user_id)
-        ->get('users')
-        ->row();
-
-    if (!$user) {
-        return $this->output->set_status_header(400)
-            ->set_output(json_encode([
-                'status' => false,
-                'code' => 400,
-                'message' => 'User not found',
-                'data' => []
-            ]));
-    }
-
-    $admin_id = (int) $user->admin_id;
-
-    // ----------------- 4. Fetch Plot Details -----------------
-    $this->db->select('p.*, s.name AS site_name');
-    $this->db->from('plots p');
-    $this->db->join('sites s', 's.id = p.site_id', 'inner');
-    $this->db->join('site_assignments sa', 'sa.site_id = s.id', 'inner');
-    $this->db->where('p.id', $plot_id);
-    $this->db->where('p.admin_id', $admin_id);
-    $this->db->where('s.admin_id', $admin_id);
-    $this->db->where('sa.admin_id', $admin_id);
-    $this->db->where('sa.user_id', $user_id);
-    $this->db->where('p.isActive', 1);
-
-    $plot = $this->db->get()->row_array();
-
-    if (!$plot) {
-        return $this->output->set_status_header(400)
-            ->set_output(json_encode([
-                'status' => false,
-                'code' => 400,
-                'message' => 'No plot found with this ID or access denied',
-                'data' => []
-            ]));
-    }
-
-    // Default boolean
-    $plot['is_sold_by_login_user'] = false;
-    // $plot['sold_by_user_name'] = null;
-
-    // ----------------- 5. If Plot SOLD -----------------
-    if (strtolower($plot['status']) === 'sold') {
-
-        // -------- Buyer Details --------
-        $buyer = $this->db
-            ->where('plot_id', $plot_id)
-            ->where('isActive', 1)
-            ->get('buyer')
-            ->row_array();
-
-        if (!empty($buyer)) {
-
-            // Check sold by login user
-            if ((int)$buyer['user_id'] === $user_id) {
-                $plot['is_sold_by_login_user'] = true;
-            }
-
-            // Get Sold By User Name
-            $sold_user = $this->db
-                ->select('name')
-                ->where('id', $buyer['user_id'])
-                ->get('users')
-                ->row();
-
-          
-        }
-
-        // -------- Payment Details --------
-        $payment = $this->db
-            ->where('plot_id', $plot_id)
-            ->get('payment_details')
-            ->row_array();
-
-        $cash_logs = [];
-        $emi_logs  = [];
-
-        if (!empty($payment)) {
-
-            // ===== CASH MODE =====
-            if ($payment['payment_mode'] === "CASH") {
-
-                $cash_logs = $this->db
-                    ->where('plot_id', $plot_id)
-                    ->order_by('id', 'ASC')
-                    ->get('cash_payment_logs')
-                    ->result_array();
-            }
-
-            // ===== EMI MODE =====
-            if ($payment['payment_mode'] === "EMI") {
-
-                $emi_logs = $this->db
-                    ->where('payment_id', $payment['id'])
-                    ->order_by('month_no', 'ASC')
-                    ->get('emi_logs')
-                    ->result_array();
-            }
-        }
-
-        // Attach data (keep your structure)
-        $plot['buyer_details'] = $buyer ?? null;
-        $plot['payment_details'] = $payment ?? null;
-        $plot['cash_payment_logs'] = $cash_logs ?? [];
-        $plot['emi_logs'] = $emi_logs ?? [];
-    }
-
-    // ----------------- 6. Success Response -----------------
-    return $this->output->set_status_header(200)
-        ->set_output(json_encode([
-            'status' => true,
-            'code' => 200,
-            'message' => 'Plot details fetched successfully',
-            'data' => $plot
-        ]));
-}
 
 
 
@@ -1024,7 +1203,7 @@ class Api extends CI_Controller
     {
         header('Content-Type: application/json');
 
-        // ---------------------- 1. AUTH -----------------------
+        // 1) Auth
         $authHeader = $this->input->get_request_header('Authorization', TRUE);
         if (!$authHeader || !preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
             return $this->respond(false, 400, "Missing or invalid authorization header");
@@ -1037,21 +1216,12 @@ class Api extends CI_Controller
 
         $user_id = (int) $decoded->data->id;
 
-        // ---------------------- GET ADMIN ---------------------
-        $user = $this->db->get_where('users', ['id' => $user_id])->row();
-        if (!$user || !$user->admin_id) {
-            return $this->respond(false, 400, "Something went wrong");
-        }
-
-        $admin_id = $user->admin_id;
-
-        // --------------------- 2. INPUT -----------------------
+        // 2) Input
         $input = json_decode($this->input->raw_input_stream, true);
         if (empty($input)) {
             return $this->respond(false, 400, "Invalid or missing input data");
         }
 
-        // Required main fields
         $main_required = ['plot_id', 'plot_number', 'site_id', 'total_price'];
         foreach ($main_required as $field) {
             if (empty($input[$field])) {
@@ -1059,7 +1229,19 @@ class Api extends CI_Controller
             }
         }
 
-        // Buyer fields
+        $plot_id = (int) $input['plot_id'];
+        $site_id = (int) $input['site_id'];
+        $input_plot_number = trim((string) $input['plot_number']);
+        $total_price = (float) $input['total_price'];
+
+        if (empty($input['buyer']) || !is_array($input['buyer'])) {
+            return $this->respond(false, 400, "buyer payload is required");
+        }
+        if (empty($input['payment']) || !is_array($input['payment'])) {
+            return $this->respond(false, 400, "payment payload is required");
+        }
+
+        // 3) Buyer validation
         $buyer = $input['buyer'];
         $buyer_required = ['name', 'mobile', 'email', 'address', 'aadhar'];
         foreach ($buyer_required as $field) {
@@ -1068,37 +1250,97 @@ class Api extends CI_Controller
             }
         }
 
-        $payment = $input['payment'];
+        // 4) Resolve access context
+        $user = $this->db->select('id, admin_id, isActive')
+            ->where('id', $user_id)
+            ->get('users')
+            ->row();
+        if (!$user || (int) $user->isActive !== 1) {
+            return $this->respond(false, 400, "User not found or inactive");
+        }
 
-        // --------------------- 3. PLOT CHECK ------------------
-        $plot = $this->db->get_where('plots', ['id' => $input['plot_id']])->row();
+        $site = $this->db->select('id, admin_id, isActive')
+            ->where('id', $site_id)
+            ->get('sites')
+            ->row();
+        if (!$site || (int) $site->isActive !== 1) {
+            return $this->respond(false, 400, "Site not found");
+        }
+
+        $site_admin_id = (int) $site->admin_id;
+        $user_admin_id = (int) ($user->admin_id ?? 0);
+        $admin_id = $user_admin_id;
+
+        // If user admin_id mismatches, allow only when assigned to this site under that admin.
+        if ($user_admin_id !== $site_admin_id) {
+            $assignment = $this->db
+                ->where('user_id', $user_id)
+                ->where('site_id', $site_id)
+                ->where('admin_id', $site_admin_id)
+                ->get('site_assignments')
+                ->row();
+            if (!$assignment) {
+                return $this->respond(false, 400, "You are not allowed to add buyer for this site");
+            }
+            $admin_id = $site_admin_id;
+        }
+
+        $payment = $input['payment'];
+        $payment_mode = strtoupper(trim((string) ($payment['payment_mode'] ?? '')));
+        if (!in_array($payment_mode, ['CASH', 'EMI'], true)) {
+            return $this->respond(false, 400, "payment_mode must be CASH or EMI");
+        }
+
+        $down_payment = (float) ($payment['down_payment'] ?? 0);
+        $remaining_amount = (float) ($payment['remaining_amount'] ?? 0);
+        $emi_duration = (int) ($payment['emi_duration'] ?? 0);
+        $installment_amount = (float) ($payment['installment_amount'] ?? ($payment['insatallment_amount'] ?? 0));
+        $emi_start_date = !empty($payment['emi_start_date']) ? date('Y-m-d', strtotime($payment['emi_start_date'])) : null;
+
+        if ($payment_mode === 'EMI') {
+            if (empty($emi_start_date) || $emi_duration <= 0 || $installment_amount <= 0) {
+                return $this->respond(false, 400, "emi_start_date, emi_duration and installment_amount are required for EMI mode");
+            }
+        }
+
+        // 5) Plot access check
+        $plot = $this->db
+            ->where('id', $plot_id)
+            ->where('site_id', $site_id)
+            ->where('admin_id', $admin_id)
+            ->where('isActive', 1)
+            ->get('plots')
+            ->row();
         if (!$plot) {
             return $this->respond(false, 400, "Plot not found");
         }
 
-        // ❗ If plot is already SOLD — stop entry
+        if ($input_plot_number !== '' && strcasecmp(trim((string) $plot->plot_number), $input_plot_number) !== 0) {
+            return $this->respond(false, 400, "plot_number does not match selected plot_id");
+        }
+
         if (strtolower($plot->status) === 'sold') {
             return $this->respond(false, 400, "This plot is already sold");
         }
 
-        // --------------------- 4. DUPLICATE BUYER -------------
-        $this->db->where('plot_id', $input['plot_id']);
-        $this->db->group_start()
-            ->where('aadhar', $buyer['aadhar'])
-            ->or_where('mobile', $buyer['mobile'])
-            ->group_end();
+        // 6) Duplicate buyer guard
+        $existing_active_buyer = $this->db
+            ->where('plot_id', $plot_id)
+            ->where('admin_id', $admin_id)
+            ->where('isActive', 1)
+            ->order_by('id', 'DESC')
+            ->get('buyer')
+            ->row();
 
-        $existing = $this->db->get('buyer')->row();
-
-        if ($existing) {
-            return $this->respond(false, 400, "Buyer already exists for this plot");
+        if ($existing_active_buyer) {
+            return $this->respond(false, 400, "This plot already has an active buyer");
         }
 
-        // --------------------- 5. INSERT BUYER ----------------
+        // 7) Insert buyer
         $buyerData = [
             'user_id' => $user_id,
             'admin_id' => $admin_id,
-            'plot_id' => $input['plot_id'],
+            'plot_id' => $plot_id,
             'name' => $buyer['name'],
             'mobile' => $buyer['mobile'],
             'email' => $buyer['email'],
@@ -1115,100 +1357,87 @@ class Api extends CI_Controller
             return $this->respond(false, 400, "Failed to insert buyer");
         }
 
-        // --------------------- 6. INSERT PAYMENT DETAILS ------
+        // 8) Insert payment details
         $paymentData = [
-    'user_id'          => $user_id,
-    'buyer_id'         => $buyer_id,
-    'plot_id'          => $input['plot_id'],
-    'admin_id'         => $admin_id,
-    'total_price'      => $input['total_price'],
-    'payment_mode'     => $payment['payment_mode'], // cash or emi
-    'down_payment'     => $payment['down_payment']      ?? 0,
-    'remaining_amount' => $payment['remaining_amount']  ?? 0,
-    'notes'            => $payment['notes']             ?? null,
-    'created_on'       => date('Y-m-d H:i:s'),
-];
-
-// Add EMI-specific fields only if EMI mode
-if (strtolower($payment['payment_mode']) === 'emi') {
-    $paymentData['emi_duration']        = $payment['emi_duration']        ?? null; // e.g. 12
-    $paymentData['emi_start_date']      = date('Y-m-d', strtotime($payment['emi_start_date']));
-    $paymentData['installment_amount']  = $payment['insatallment_amount'] ?? null; // fix typo in DB col name
-}
-
-$this->db->insert('payment_details', $paymentData);
-$payment_id = $this->db->insert_id();
-
-if (!$payment_id) {
-    return $this->respond(false, 400, "Failed to insert payment details");
-}
-
-// --------------------- CASH LOG -------------------------
-if (strtolower($payment['payment_mode']) === 'cash') {
-    $cashLog = [
-      
-        'buyer_id'         => $buyer_id,
-        'plot_id'          => $input['plot_id'],
-        'paid_amount'      => $payment['down_payment'],
-        'remaining_amount' => $payment['remaining_amount'],
-        'total_price'      => $input['total_price'],
-        'status'           => 'pending',
-        'notes'            => $payment['notes'] ?? null,
-        'created_on'       => date('Y-m-d H:i:s'),
-    ];
-    $this->db->insert('cash_payment_logs', $cashLog);
-}
-
-// --------------------- EMI LOGS -------------------------
-$emiRows = [];
-
-if (strtolower($payment['payment_mode']) === 'emi') {
-
-    // Validate required EMI fields
-    if (
-        empty($payment['emi_start_date']) ||
-        empty($payment['emi_duration']) ||
-        empty($payment['insatallment_amount'])
-    ) {
-        return $this->respond(false, 400, "emi_start_date, emi_duration and insatallment_amount are required for EMI mode");
-    }
-
-    $start_date   = date('Y-m-d', strtotime($payment['emi_start_date']));
-    $months       = (int) $payment['emi_duration'];        // e.g. 12
-    $monthly_emi  = (float) $payment['insatallment_amount']; // e.g. 1000
-
-    for ($i = 1; $i <= $months; $i++) {
-        // Each EMI date is i months after start date
-        $emi_date = date('Y-m-d', strtotime("+$i month", strtotime($start_date)));
-
-        $emiRows[] = [
-            'payment_id' => $payment_id,
-            'buyer_id'   => $buyer_id,
-            'plot_id'    => $input['plot_id'],
-            // 'admin_id'   => $admin_id,
-            'month_no'   => $i,
-            'emi_date'   => $emi_date,
-            'emi_amount' => $monthly_emi,
-            'status'     => 'pending',
+            'user_id' => $user_id,
+            'buyer_id' => $buyer_id,
+            'plot_id' => $plot_id,
+            'admin_id' => $admin_id,
+            'total_price' => $total_price,
+            'payment_mode' => $payment_mode,
+            'down_payment' => $down_payment,
+            'remaining_amount' => $remaining_amount,
+            'notes' => $payment['notes'] ?? null,
             'created_on' => date('Y-m-d H:i:s'),
         ];
+
+        if ($payment_mode === 'EMI') {
+            $paymentData['emi_duration'] = $emi_duration;
+            $paymentData['emi_start_date'] = $emi_start_date;
+            $paymentData['installment_amount'] = $installment_amount;
+        }
+
+        $this->db->insert('payment_details', $paymentData);
+        $payment_id = $this->db->insert_id();
+
+        if (!$payment_id) {
+            return $this->respond(false, 400, "Failed to insert payment details");
+        }
+
+        // 9) Cash log
+        if ($payment_mode === 'CASH') {
+            $cashLog = [
+                'admin_id' => $admin_id,
+                'user_id' => $user_id,
+                'buyer_id' => $buyer_id,
+                'plot_id' => $plot_id,
+                'paid_amount' => $down_payment,
+                'remaining_amount' => $remaining_amount,
+                'total_price' => $total_price,
+                'status' => 'pending',
+                'notes' => $payment['notes'] ?? null,
+                'created_on' => date('Y-m-d H:i:s'),
+            ];
+            $this->db->insert('cash_payment_logs', $cashLog);
+        }
+
+        // 10) EMI rows
+        $emiRows = [];
+
+        if ($payment_mode === 'EMI') {
+            $start_date = $emi_start_date;
+            $months = $emi_duration;
+            $monthly_emi = $installment_amount;
+
+            for ($i = 1; $i <= $months; $i++) {
+                $emi_date = date('Y-m-d', strtotime("+$i month", strtotime($start_date)));
+
+                $emiRows[] = [
+                    'payment_id' => $payment_id,
+                    'buyer_id' => $buyer_id,
+                    'plot_id' => $plot_id,
+                    'month_no' => $i,
+                    'emi_date' => $emi_date,
+                    'emi_amount' => $monthly_emi,
+                    'status' => 'pending',
+                    'created_on' => date('Y-m-d H:i:s'),
+                ];
+            }
+
+            $this->db->insert_batch('emi_logs', $emiRows);
+        }
+
+        // 11) Mark plot sold
+        $this->db->where('id', $plot_id);
+        $this->db->update('plots', ['status' => 'sold']);
+
+        // 12) Success
+        return $this->respond(true, 200, "Buyer & payment saved successfully", [
+            "buyer" => $buyerData,
+            "payment" => $paymentData,
+            "emi_rows" => $emiRows,
+        ]);
     }
-
-    $this->db->insert_batch('emi_logs', $emiRows);
-}
-
-// --------------------- UPDATE PLOT STATUS → SOLD --------
-$this->db->where('id', $input['plot_id']);
-$this->db->update('plots', ['status' => 'sold']);
-
-// --------------------- SUCCESS --------------------------
-return $this->respond(true, 200, "Buyer & payment saved successfully", [
-    "buyer"     => $buyerData,
-    "payment"   => $paymentData,
-    "emi_rows"  => $emiRows,
-]);
-    }
-
 
     private function respond($status, $code, $message, $data = null)
     {
@@ -1261,6 +1490,123 @@ return $this->respond(true, 200, "Buyer & payment saved successfully", [
             }
         }
 
+        $payment_mode = strtolower(trim((string) ($input['payment_mode'] ?? '')));
+        $amount = (float) ($input['amount'] ?? 0);
+        if ($amount <= 0) {
+            return $this->respond(false, 400, "amount must be greater than 0");
+        }
+
+        $notes = $input['notes'] ?? null;
+        if ($payment_mode === 'emi') {
+            $payment_id = (int) ($input['payment_id'] ?? 0);
+            $month_no = (int) ($input['month_no'] ?? 0);
+
+            if ($payment_id <= 0 || $month_no <= 0) {
+                return $this->respond(false, 400, "payment_id and month_no are required for EMI payment");
+            }
+
+            $payment = $this->db->get_where('payment_details', [
+                'id' => $payment_id,
+                'buyer_id' => (int) $input['buyer_id'],
+                'plot_id' => (int) $input['plot_id']
+            ])->row();
+            if (!$payment) {
+                return $this->respond(false, 400, "Invalid payment_id for this buyer/plot");
+            }
+
+            $duration = (int) ($payment->emi_duration ?? 0);
+            if ($duration > 0 && $month_no > $duration) {
+                return $this->respond(false, 400, "month_no exceeds EMI duration");
+            }
+
+            $emi_row = $this->db->order_by('id', 'DESC')->get_where('emi_logs', [
+                'payment_id' => $payment_id,
+                'buyer_id' => (int) $input['buyer_id'],
+                'plot_id' => (int) $input['plot_id'],
+                'month_no' => $month_no
+            ])->row();
+            if ($emi_row && strtolower((string) ($emi_row->status ?? 'pending')) === 'approve') {
+                return $this->respond(false, 400, "This installment month is already approved");
+            }
+
+            // Canonical marker to lock one request per payment/month.
+            $marker = "[EMI:{$payment_id}:{$month_no}]";
+            $duplicate = $this->db->from('cash_payment_logs')
+                ->where('buyer_id', (int) $input['buyer_id'])
+                ->where('plot_id', (int) $input['plot_id'])
+                ->where_in('status', ['pending', 'approve'])
+                ->like('notes', $marker)
+                ->count_all_results();
+            if ((int) $duplicate > 0) {
+                return $this->respond(false, 400, "Installment for month {$month_no} is already submitted");
+            }
+
+            // Backward-compatible duplicate guard for legacy notes
+            // (e.g. "Paid second EMI installment" without marker).
+            $legacy_logs = $this->db->select('id, notes')
+                ->from('cash_payment_logs')
+                ->where('buyer_id', (int) $input['buyer_id'])
+                ->where('plot_id', (int) $input['plot_id'])
+                ->where_in('status', ['pending', 'approve'])
+                ->like('notes', 'emi')
+                ->get()
+                ->result();
+
+            $ordinals = [
+                'first' => 1,
+                'second' => 2,
+                'third' => 3,
+                'fourth' => 4,
+                'fifth' => 5,
+                'sixth' => 6,
+                'seventh' => 7,
+                'eighth' => 8,
+                'ninth' => 9,
+                'tenth' => 10,
+                'eleventh' => 11,
+                'twelfth' => 12,
+                'thirteenth' => 13,
+                'fourteenth' => 14,
+                'fifteenth' => 15,
+                'sixteenth' => 16,
+                'seventeenth' => 17,
+                'eighteenth' => 18,
+                'nineteenth' => 19,
+                'twentieth' => 20
+            ];
+
+            foreach ($legacy_logs as $lg) {
+                $note = strtolower((string) ($lg->notes ?? ''));
+                if ($note === '') {
+                    continue;
+                }
+
+                // marker-based check in case previous data used same marker format.
+                if (preg_match('/\[emi:(\d+):(\d+)\]/i', $note, $m)) {
+                    if ((int) $m[1] === $payment_id && (int) $m[2] === $month_no) {
+                        return $this->respond(false, 400, "Installment for month {$month_no} is already submitted");
+                    }
+                }
+
+                // numeric month hint check (e.g. "month 2", "month_no:2").
+                if (preg_match('/month(?:_no)?\s*[:\-]?\s*(\d+)/i', $note, $m2)) {
+                    if ((int) $m2[1] === $month_no) {
+                        return $this->respond(false, 400, "Installment for month {$month_no} is already submitted");
+                    }
+                }
+
+                // word-based month check (e.g. "second EMI installment").
+                foreach ($ordinals as $word => $num) {
+                    if ($num === $month_no && strpos($note, $word) !== false && strpos($note, 'emi') !== false) {
+                        return $this->respond(false, 400, "Installment for month {$month_no} is already submitted");
+                    }
+                }
+            }
+
+            $clean_notes = trim((string) ($notes ?? ''));
+            $notes = $marker . ($clean_notes !== '' ? (' | ' . $clean_notes) : '');
+        }
+
 
 
         // ---------------------- 3. INSERT CASH LOG ----------------
@@ -1269,11 +1615,11 @@ return $this->respond(true, 200, "Buyer & payment saved successfully", [
             'user_id' => $user_id,
             'buyer_id' => $input['buyer_id'],
             'plot_id' => $input['plot_id'],
-            'paid_amount' => $input['amount'],
+            'paid_amount' => $amount,
             'remaining_amount' => $input['remaining_amount'],
             'total_price' => $input['total_price'],
             'status' => 'pending', // default status
-            'notes' => $input['notes'] ?? null,
+            'notes' => $notes,
             'created_on' => date('Y-m-d H:i:s'),
         ];
 
@@ -1282,6 +1628,27 @@ return $this->respond(true, 200, "Buyer & payment saved successfully", [
 
         if (!$log_id) {
             return $this->respond(false, 400, "Failed to create cash payment log");
+        }
+
+        // Keep EMI schedule row in sync for EMI installment requests.
+        if ($payment_mode === 'emi') {
+            $payment_id = (int) ($input['payment_id'] ?? 0);
+            $month_no = (int) ($input['month_no'] ?? 0);
+            if ($payment_id > 0 && $month_no > 0) {
+                $target_emi = $this->db->order_by('id', 'DESC')->get_where('emi_logs', [
+                    'payment_id' => $payment_id,
+                    'buyer_id' => (int) $input['buyer_id'],
+                    'plot_id' => (int) $input['plot_id'],
+                    'month_no' => $month_no
+                ])->row();
+
+                if ($target_emi && strtolower((string) ($target_emi->status ?? 'pending')) !== 'approve') {
+                    $this->db->where('id', (int) $target_emi->id)->update('emi_logs', [
+                        'emi_amount' => $amount,
+                        'status' => 'pending'
+                    ]);
+                }
+            }
         }
 
         return $this->respond(true, 200, "Cash payment log created successfully", $cashLog);
@@ -1379,7 +1746,7 @@ return $this->respond(true, 200, "Buyer & payment saved successfully", [
         // HANDLE IMAGE UPLOAD
         $image_path = null;
 
-        if (!empty($_FILES['expense_image']['name'])) {
+        if (isset($_FILES['expense_image']) && $_FILES['expense_image']['error'] == 0) {
 
             $upload_dir = FCPATH . 'uploads/expenses/';
 
@@ -1387,25 +1754,24 @@ return $this->respond(true, 200, "Buyer & payment saved successfully", [
                 mkdir($upload_dir, 0777, true);
             }
 
-            $config['upload_path'] = $upload_dir;
-            $config['allowed_types'] = 'jpg|jpeg|png|pdf';
-            $config['max_size'] = 2048;
-            $config['file_name'] = 'EXP_' . time() . '_' . $user_id;
+            $config = [
+                'upload_path' => $upload_dir,
+                'allowed_types' => 'jpg|jpeg|png|pdf',
+                'max_size' => 2048,
+                'file_name' => 'EXP_' . time() . '_' . $user_id,
+                'overwrite' => false
+            ];
 
             $this->load->library('upload', $config);
 
             if (!$this->upload->do_upload('expense_image')) {
-                return $this->output
-                    ->set_status_header(400)
-                    ->set_output(json_encode([
-                        'status' => false,
-                        'code' => 400,
-                        'message' => $this->upload->display_errors('', ''),
-                        'data' => null
-                    ]));
+
+                echo $this->upload->display_errors();
+                exit;
             }
 
             $upload_data = $this->upload->data();
+
             $image_path = 'uploads/expenses/' . $upload_data['file_name'];
         }
 
@@ -1518,7 +1884,6 @@ return $this->respond(true, 200, "Buyer & payment saved successfully", [
             } else {
                 $month_number = date('n', strtotime($month_input));
             }
-
         } else {
             $month_number = date('n'); // current month
         }
@@ -2570,7 +2935,6 @@ return $this->respond(true, 200, "Buyer & payment saved successfully", [
             }
 
             return $decoded;
-
         } catch (Exception $e) {
             $this->output
                 ->set_status_header(400)
@@ -2604,6 +2968,225 @@ return $this->respond(true, 200, "Buyer & payment saved successfully", [
         return JWT::encode($payload, $this->jwt_secret, 'HS256');
     }
 
+    public function delete_account()
+    {
+        header('Content-Type: application/json');
 
+        // 🔐 1. Verify JWT Token
+        $authHeader = $this->input->get_request_header('Authorization', TRUE);
+        $token = null;
 
+        if ($authHeader && preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
+            $token = $matches[1];
+        }
+
+        $decoded = $this->verify_jwt($token);
+        if (!$decoded || empty($decoded->data->id)) {
+            return $this->output
+                ->set_status_header(401)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 401,
+                    'message' => 'Invalid token or user ID missing',
+                    'data' => null
+                ]));
+        }
+
+        $user_id = (int) $decoded->data->id;
+
+        // 🔍 2. Check user exists
+        $user = $this->db->where('id', $user_id)
+            ->where('isActive', 1)
+            ->get('users')
+            ->row();
+
+        if (!$user) {
+            return $this->output
+                ->set_status_header(404)
+                ->set_output(json_encode([
+                    'status' => false,
+                    'code' => 404,
+                    'message' => 'User not found or already deleted',
+                    'data' => null
+                ]));
+        }
+
+        // 🗑️ 3. Soft delete (Deactivate account)
+        $this->db->where('id', $user_id)
+            ->update('users', ['isActive' => 0]);
+
+        // 🚫 4. Blacklist token (force logout)
+        $expiry = date('Y-m-d H:i:s', $decoded->exp);
+        $this->db->insert('token_blacklist', [
+            'token' => $token,
+            'expires_at' => $expiry
+        ]);
+
+        return $this->output
+            ->set_status_header(200)
+            ->set_output(json_encode([
+                'status' => true,
+                'code' => 200,
+                'message' => 'Account deleted successfully',
+                'data' => null
+            ]));
+    }
+
+    public function terms_conditions()
+    {
+        header('Content-Type: application/json');
+
+        $terms_content = '
+        <h2>Introduction</h2>
+        <p>Welcome to our Real Estate platform. By accessing or using this application, you agree to comply with and be bound by these Terms and Conditions.</p>
+
+        <h2>User Registration</h2>
+        <p>Users must provide accurate and complete information while registering on the platform.</p>
+        <ul>
+            <li>Users are responsible for maintaining the confidentiality of their login credentials.</li>
+            <li>Any misuse of the platform may result in account suspension or termination.</li>
+        </ul>
+
+        <h2>Property Listings</h2>
+        <p>All property listings must contain accurate and truthful information.</p>
+        <ul>
+            <li>Property owners or agents are responsible for the accuracy of listing details.</li>
+            <li>The platform is not responsible for incorrect or misleading information provided by users.</li>
+        </ul>
+
+        <h2>Property Booking & Transactions</h2>
+        <p>All transactions or bookings made through the platform are the responsibility of the buyer and seller.</p>
+        <ul>
+            <li>The platform acts only as a facilitator between buyers and sellers.</li>
+            <li>Users must verify property details before making any payment.</li>
+        </ul>
+
+        <h2>Payments</h2>
+        <p>Any payments related to property bookings must follow the platform guidelines.</p>
+        <ul>
+            <li>Users should not make payments outside the official platform without verification.</li>
+            <li>The platform is not responsible for payment disputes between parties.</li>
+        </ul>
+
+        <h2>User Responsibilities</h2>
+        <p>Users agree not to misuse the platform for fraudulent activities.</p>
+        <ul>
+            <li>Uploading fake property listings is strictly prohibited.</li>
+            <li>Users must follow all applicable laws and regulations.</li>
+        </ul>
+
+        <h2>Privacy & Data Protection</h2>
+        <p>Your personal information is collected and used according to our privacy policy.</p>
+
+        <h2>Changes to Terms</h2>
+        <p>We reserve the right to update these Terms and Conditions at any time without prior notice.</p>
+    ';
+
+        $response = [
+            'status' => true,
+            'data' => [
+                'last_updated' => date('d M Y'),
+                'content' => $terms_content,
+                'contact' => [
+                    'email' => 'support@realestate.com',
+                    'phone' => '+91 9876543210'
+                ]
+            ]
+        ];
+
+        echo json_encode($response);
+    }
+
+    public function privacy_policy()
+    {
+        header('Content-Type: application/json');
+
+        $privacy_content = '
+
+    <h2>Introduction</h2>
+    <p>Welcome to <strong>Side Desk</strong>. Your privacy is important to us. This Privacy Policy explains how we collect, use, and protect your information when you use our real estate platform.</p>
+
+    <h2>Information We Collect</h2>
+    <p>We may collect personal and property-related information when you use our services.</p>
+
+    <ul>
+        <li>Name, email address, and phone number</li>
+        <li>Account login credentials</li>
+        <li>Property listing details</li>
+        <li>Location and device information</li>
+    </ul>
+
+    <h2>How We Use Your Information</h2>
+    <p>Your information is used to improve our services and provide a better real estate experience.</p>
+
+    <ul>
+        <li>To create and manage user accounts</li>
+        <li>To display property listings</li>
+        <li>To connect buyers, sellers, and agents</li>
+        <li>To provide customer support</li>
+    </ul>
+
+    <h2>Property Listings and Data</h2>
+    <p>When you upload property information, you confirm that the data provided is accurate and lawful.</p>
+
+    <ul>
+        <li>Property owners are responsible for listing accuracy</li>
+        <li>Side Desk may review or remove misleading listings</li>
+    </ul>
+
+    <h2>Data Protection</h2>
+    <p>We use secure technologies and encryption methods to protect your personal information.</p>
+
+    <ul>
+        <li>Secure server storage</li>
+        <li>Password encryption</li>
+        <li>Restricted data access</li>
+    </ul>
+
+    <h2>Cookies and Tracking</h2>
+    <p>Our platform may use cookies to improve user experience and analyze usage patterns.</p>
+
+    <ul>
+        <li>Login session management</li>
+        <li>Website performance tracking</li>
+        <li>Personalized user experience</li>
+    </ul>
+
+    <h2>Sharing of Information</h2>
+    <p>We do not sell your personal information. However, limited data may be shared when necessary.</p>
+
+    <ul>
+        <li>With property buyers or sellers for communication</li>
+        <li>With service providers supporting our platform</li>
+        <li>When required by law</li>
+    </ul>
+
+    <h2>Your Rights</h2>
+    <p>You have the right to control your personal data.</p>
+
+    <ul>
+        <li>Request correction of your data</li>
+        <li>Request deletion of your account</li>
+        <li>Contact us for privacy concerns</li>
+    </ul>
+
+    <h2>Updates to Privacy Policy</h2>
+    <p>Side Desk may update this Privacy Policy from time to time. Changes will be reflected on this page with the updated date.</p>
+
+    ';
+
+        $response = [
+            'status' => true,
+            'data' => [
+                'last_updated' => date('d M Y'),
+                'content' => $privacy_content,
+                'contact' => [
+                    'email' => 'support@sidedesk.com',
+                    'phone' => '+91 9876543210'
+                ]
+            ]
+        ];
+
+        echo json_encode($response);
+    }
 }

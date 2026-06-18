@@ -19,30 +19,39 @@ class Plots extends My_Controller
 
 
 
-   public function index($id = null)
-{
-    $this->data['id'] = $id ?? '';
+    public function index($id = null)
+    {
+        $this->data['id'] = $id ?? '';
 
-    // ✅ Fetch site details using site id
-    if (!empty($id)) {
-        $site = $this->general_model->getOne('sites', ['id' => $id]);
+        // ✅ Fetch site details using site id
+        if (!empty($id)) {
+            $site = $this->general_model->getOne('sites', ['id' => $id]);
 
-        // Pass site name to view
-        $this->data['site_name'] = $site->name ?? '';
-    } else {
-        $this->data['site_name'] = '';
+            // Pass site name to view
+            $this->data['site_name'] = $site->name ?? '';
+        } else {
+            $this->data['site_name'] = '';
+        }
+
+        $this->load->view('header');
+        $this->load->view('plot_view', $this->data);
+        $this->load->view('footer');
     }
-
-    $this->load->view('header');
-    $this->load->view('plot_view', $this->data);
-    $this->load->view('footer');
-}
 
 
     public function add_plot()
     {
+        $admin_id = $this->admin['user_id'] ?? null;
+        $data['sites'] = [];
 
-        $data['sites'] = $this->general_model->getAll('sites', ['isActive' => '1']);
+        if ($admin_id) {
+            $data['sites'] = $this->db
+                ->where('admin_id', $admin_id)
+                ->where('isActive', 1)
+                ->order_by('name', 'ASC')
+                ->get('sites')
+                ->result();
+        }
 
         $this->load->view('header');
 
@@ -76,13 +85,26 @@ class Plots extends My_Controller
         $price = trim($this->input->post('price'));
 
         // ✅ Validation
-        if (empty($site_id) || empty($plot_number) || empty($size) || empty($dimension) || empty($facing) || empty($price)) {
+        if (empty($site_id) || empty($plot_number) || empty($size) || empty($price)) {
             $response['message'] = 'All fields are required';
             echo json_encode($response);
             return;
         }
 
         // ❗ OPTIONAL: Avoid duplicate plot number inside same site
+        $site = $this->db
+            ->where('id', $site_id)
+            ->where('admin_id', $admin_id)
+            ->where('isActive', 1)
+            ->get('sites')
+            ->row();
+
+        if (!$site) {
+            $response['message'] = 'Invalid site selected';
+            echo json_encode($response);
+            return;
+        }
+
         $exists = $this->general_model->getOne('plots', [
             'site_id' => $site_id,
             'plot_number' => $plot_number
@@ -100,8 +122,8 @@ class Plots extends My_Controller
             'site_id' => $site_id,
             'plot_number' => $plot_number,
             'size' => $size,
-            'dimension' => $dimension,
-            'facing' => $facing,
+            'dimension' => ($dimension === '') ? null : $dimension,
+            'facing' => ($facing === '') ? null : $facing,
             'price' => $price,
             'status' => 'available', // 🔥 IMPORTANT
             'isActive' => 1,
@@ -179,7 +201,7 @@ class Plots extends My_Controller
         // 🧾 Required validation
         if (
             empty($site_id) || empty($plot_number) || empty($size) ||
-            empty($dimension) || empty($facing) || empty($price) || empty($status)
+            empty($price) || empty($status)
         ) {
 
             $response['message'] = 'All fields are required';
@@ -187,11 +209,18 @@ class Plots extends My_Controller
             return;
         }
 
-        // 🔍 Duplicate check (Exclude current row)
+        // 🔍 Duplicate check (Exclude current row, active records only, normalized plot number)
+        $normalized_plot_number = strtolower(trim($plot_number));
+        $this->db->from('plots');
         $this->db->where('site_id', $site_id);
-        $this->db->where('plot_number', $plot_number);
         $this->db->where('id !=', $id);
-        $exists = $this->db->get('plots')->row();
+        $this->db->where('isActive', 1);
+        $this->db->where(
+            "LOWER(TRIM(plot_number)) = " . $this->db->escape($normalized_plot_number),
+            null,
+            false
+        );
+        $exists = $this->db->get()->row();
 
         if ($exists) {
             $response['message'] = 'Plot number already exists for this site';
@@ -204,8 +233,8 @@ class Plots extends My_Controller
             'site_id' => $site_id,
             'plot_number' => $plot_number,
             'size' => $size,
-            'dimension' => $dimension,
-            'facing' => $facing,
+            'dimension' => ($dimension === '') ? null : $dimension,
+            'facing' => ($facing === '') ? null : $facing,
             'price' => $price,
             'status' => $status
             // 'updated_at'  => date('Y-m-d H:i:s')
@@ -216,6 +245,153 @@ class Plots extends My_Controller
         $updated = $this->db->update('plots', $data);
 
         if ($updated) {
+            // 👤 Handle Buyer & Payment details if status is sold
+            if ($status === 'sold') {
+                $existing_buyer = $this->db->get_where('buyer', ['plot_id' => $id, 'isActive' => 1])->row();
+                $buyer_name = $this->input->post('buyer_name');
+
+                if ($buyer_name) {
+                    $buyer_user_id = $this->input->post('buyer_user_id');
+                    if ($buyer_user_id === 'admin' || empty($buyer_user_id)) {
+                        $buyer_user_id = $admin_id;
+                    } else {
+                        $buyer_user_id = (int)$buyer_user_id;
+                    }
+
+                    $buyerData = [
+                        'user_id' => $buyer_user_id,
+                        'admin_id' => $admin_id,
+                        'plot_id' => $id,
+                        'name' => trim($buyer_name),
+                        'mobile' => trim($this->input->post('buyer_mobile')),
+                        'email' => trim($this->input->post('buyer_email')),
+                        'address' => trim($this->input->post('buyer_address')),
+                        'aadhar' => trim($this->input->post('buyer_aadhar')),
+                        'isActive' => 1
+                    ];
+
+                    if ($existing_buyer) {
+                        $this->db->where('id', $existing_buyer->id)->update('buyer', $buyerData);
+                        $buyer_id = $existing_buyer->id;
+                    } else {
+                        $buyerData['created_on'] = date('Y-m-d H:i:s');
+                        $this->db->insert('buyer', $buyerData);
+                        $buyer_id = $this->db->insert_id();
+                    }
+
+                    // Prepare payment details
+                    $payment_mode = strtoupper(trim((string)$this->input->post('payment_mode')));
+                    $total_price = (float)$this->input->post('total_price');
+                    $down_payment = (float)$this->input->post('down_payment');
+                    $remaining_amount = (float)$this->input->post('remaining_amount');
+                    $notes = trim((string)$this->input->post('payment_notes'));
+
+                    $paymentData = [
+                        'user_id'          => $buyer_user_id,
+                        'buyer_id'         => $buyer_id,
+                        'plot_id'          => $id,
+                        'admin_id'         => $admin_id,
+                        'total_price'      => $total_price,
+                        'payment_mode'     => $payment_mode,
+                        'down_payment'     => $down_payment,
+                        'remaining_amount' => $remaining_amount,
+                        'notes'            => $notes,
+                    ];
+
+                    if ($payment_mode === 'EMI') {
+                        $paymentData['emi_duration']       = (int)$this->input->post('emi_duration');
+                        $paymentData['emi_start_date']     = $this->input->post('emi_start_date') ? date('Y-m-d', strtotime($this->input->post('emi_start_date'))) : null;
+                        $paymentData['installment_amount'] = (float)$this->input->post('installment_amount');
+                    } else {
+                        $paymentData['emi_duration']       = null;
+                        $paymentData['emi_start_date']     = null;
+                        $paymentData['installment_amount'] = null;
+                    }
+
+                    $existing_payment = $this->db->get_where('payment_details', ['buyer_id' => $buyer_id])->row();
+                    if ($existing_payment) {
+                        $this->db->where('id', $existing_payment->id)->update('payment_details', $paymentData);
+                        $payment_id = $existing_payment->id;
+                    } else {
+                        $paymentData['created_on'] = date('Y-m-d H:i:s');
+                        $this->db->insert('payment_details', $paymentData);
+                        $payment_id = $this->db->insert_id();
+                    }
+
+                    // Reset payment logs (cash logs and emi logs)
+                    $this->db->where('buyer_id', $buyer_id)->delete('cash_payment_logs');
+                    $this->db->where('buyer_id', $buyer_id)->delete('emi_logs');
+
+                    if ($payment_mode === 'CASH') {
+                        $cashLog = [
+                            'admin_id'         => $admin_id,
+                            'user_id'          => $buyer_user_id,
+                            'buyer_id'         => $buyer_id,
+                            'plot_id'          => $id,
+                            'paid_amount'      => $down_payment,
+                            'remaining_amount' => $remaining_amount,
+                            'total_price'      => $total_price,
+                            'status'           => 'approve',
+                            'notes'            => $notes ?: 'Initial down payment',
+                            'created_on'       => date('Y-m-d H:i:s'),
+                        ];
+                        $this->db->insert('cash_payment_logs', $cashLog);
+                    } else if ($payment_mode === 'EMI') {
+                        if ($down_payment > 0) {
+                            $cashLog = [
+                                'admin_id'         => $admin_id,
+                                'user_id'          => $buyer_user_id,
+                                'buyer_id'         => $buyer_id,
+                                'plot_id'          => $id,
+                                'paid_amount'      => $down_payment,
+                                'remaining_amount' => $remaining_amount,
+                                'total_price'      => $total_price,
+                                'status'           => 'approve',
+                                'notes'            => 'Down Payment',
+                                'created_on'       => date('Y-m-d H:i:s'),
+                            ];
+                            $this->db->insert('cash_payment_logs', $cashLog);
+                        }
+
+                        $emi_duration = (int)$this->input->post('emi_duration');
+                        $emi_start_date = $this->input->post('emi_start_date');
+                        $installment_amount = (float)$this->input->post('installment_amount');
+
+                        if ($emi_duration > 0 && !empty($emi_start_date)) {
+                            $emiRows = [];
+                            $start_date = date('Y-m-d', strtotime($emi_start_date));
+                            for ($i = 1; $i <= $emi_duration; $i++) {
+                                $emi_date = date('Y-m-d', strtotime("+$i month", strtotime($start_date)));
+                                $emiRows[] = [
+                                    'payment_id' => $payment_id,
+                                    'buyer_id'   => $buyer_id,
+                                    'plot_id'    => $id,
+                                    'month_no'   => $i,
+                                    'emi_date'   => $emi_date,
+                                    'emi_amount' => $installment_amount,
+                                    'status'     => 'pending',
+                                    'created_on' => date('Y-m-d H:i:s'),
+                                ];
+                            }
+                            if (!empty($emiRows)) {
+                                $this->db->insert_batch('emi_logs', $emiRows);
+                            }
+                        }
+                    }
+                } else {
+                    if (!$existing_buyer) {
+                        echo json_encode(['status' => 'error', 'message' => 'Buyer details are required for Sold status']);
+                        return;
+                    }
+                }
+            } else {
+                // Deactivate buyer details if status changed from sold to available/pending
+                $existing_buyer = $this->db->get_where('buyer', ['plot_id' => $id, 'isActive' => 1])->row();
+                if ($existing_buyer) {
+                    $this->db->where('id', $existing_buyer->id)->update('buyer', ['isActive' => 0]);
+                }
+            }
+
             $response = [
                 'status' => 'success',
                 'message' => 'Plot updated successfully'
@@ -238,116 +414,212 @@ class Plots extends My_Controller
             ->update('sites', ['site_value' => $total_value]);
     }
 
-    public function import_plots()
+    public function import()
     {
         header('Content-Type: application/json');
 
         $admin_id = $this->admin['user_id'] ?? null;
-        if (!$admin_id) {
-            echo json_encode(['status' => 'error', 'message' => 'Unauthorized access']);
+        $site_id  = (int) $this->input->post('site_id');
+        $rows     = json_decode($this->input->post('rows'), true);
+
+        $errors = [];
+        $insert_data = [];
+        $excel_plot_numbers = [];
+        $max_error_messages = 200;
+
+        if (!$admin_id || !$site_id) {
+            echo json_encode(['status' => 'error', 'message' => 'Invalid request']);
             return;
         }
 
-        $site_id = (int) $this->input->post('site_id');
-        $rows_json = $this->input->post('rows');
-
-        if ($site_id <= 0) {
-            echo json_encode(['status' => 'error', 'message' => 'Invalid site id']);
-            return;
-        }
-
-        if (empty($rows_json)) {
-            echo json_encode(['status' => 'error', 'message' => 'No import data found']);
-            return;
-        }
-
-        $rows = json_decode($rows_json, true);
         if (!is_array($rows) || empty($rows)) {
-            echo json_encode(['status' => 'error', 'message' => 'Invalid import data format']);
+            echo json_encode(['status' => 'error', 'message' => 'No rows found for import']);
             return;
         }
 
-        $existing_rows = $this->db->select('plot_number')
-            ->from('plots')
-            ->where('site_id', $site_id)
-            ->where('isActive', 1)
-            ->get()
+        // Guardrail for extremely large payloads.
+        if (count($rows) > 10000) {
+            echo json_encode(['status' => 'error', 'message' => 'Too many rows. Please import up to 10,000 rows per file.']);
+            return;
+        }
+
+        // Allow large imports to complete instead of timing out.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(300);
+        }
+
+        // Selected site must belong to current admin.
+        $site = $this->db
+            ->where('id', $site_id)
+            ->where('admin_id', $admin_id)
+            ->get('sites')
+            ->row();
+
+        if (!$site) {
+            echo json_encode(['status' => 'error', 'message' => 'This Site Not Found.']);
+            return;
+        }
+
+        // Build admin site-name map once (O(1) lookup during validation).
+        $admin_sites = $this->db
+            ->select('id, name')
+            ->where('admin_id', $admin_id)
+            ->get('sites')
             ->result();
 
-        $existing_plot_numbers = [];
-        foreach ($existing_rows as $existing) {
-            $plot_number = trim((string) ($existing->plot_number ?? ''));
-            if ($plot_number !== '') {
-                $existing_plot_numbers[strtolower($plot_number)] = true;
+        $admin_site_name_map = [];
+        foreach ($admin_sites as $admin_site) {
+            $name_key = strtolower(trim((string) ($admin_site->name ?? '')));
+            if ($name_key !== '') {
+                $admin_site_name_map[$name_key] = (int) $admin_site->id;
             }
         }
 
-        $insert_rows = [];
-        $skipped_duplicates = 0;
-        $skipped_empty = 0;
+        // Load all site names once to avoid per-row queries while validating ownership.
+        $all_sites = $this->db
+            ->select('admin_id, name')
+            ->where('isActive', 1)
+            ->get('sites')
+            ->result();
 
-        foreach ($rows as $row) {
-            if (!is_array($row)) {
-                $skipped_empty++;
+        $global_site_owner_map = [];
+        foreach ($all_sites as $s) {
+            $key = strtolower(trim((string) ($s->name ?? '')));
+            if ($key === '') {
                 continue;
             }
-
-            $plot_number = $this->import_field($row['plot_number'] ?? null);
-            $size = $this->import_field($row['size'] ?? null);
-            $dimension = $this->import_field($row['dimension'] ?? null);
-            $facing = $this->import_field($row['facing'] ?? null);
-            $price = $this->import_number_field($row['price'] ?? null);
-            $status = $this->normalize_import_status($row['status'] ?? null);
-
-            if (
-                $plot_number === null &&
-                $size === null &&
-                $dimension === null &&
-                $facing === null &&
-                $price === null
-            ) {
-                $skipped_empty++;
-                continue;
+            if (!isset($global_site_owner_map[$key])) {
+                $global_site_owner_map[$key] = [];
             }
+            $global_site_owner_map[$key][(int) $s->admin_id] = true;
+        }
 
-            if ($plot_number !== null) {
-                $plot_key = strtolower($plot_number);
-                if (isset($existing_plot_numbers[$plot_key])) {
-                    $skipped_duplicates++;
-                    continue;
+        // Load existing plot numbers once to avoid N queries.
+        $existing_plots = $this->db
+            ->select('plot_number')
+            ->where('admin_id', $admin_id)
+            ->where('site_id', $site_id)
+            ->where('isActive', 1)
+            ->get('plots')
+            ->result();
+
+        $db_plot_numbers = [];
+        foreach ($existing_plots as $p) {
+            $k = strtolower(trim((string) ($p->plot_number ?? '')));
+            if ($k !== '') {
+                $db_plot_numbers[$k] = true;
+            }
+        }
+
+        foreach ($rows as $index => $row) {
+            $line = $index + 2; // Excel header is row 1.
+            $row_errors = [];
+
+            $site_name   = $this->import_field($row['Site Name'] ?? ($row['site_name'] ?? ($row['site'] ?? null)));
+            $plot_number = $this->import_field($row['Plot Number'] ?? ($row['plot_number'] ?? ($row['plot'] ?? null)));
+            $size        = $this->import_field($row['Size'] ?? ($row['size'] ?? null));
+            $dimension   = $this->import_field($row['Dimension'] ?? ($row['dimension'] ?? null));
+            $facing      = $this->import_field($row['Facing'] ?? ($row['facing'] ?? null));
+            $price       = $this->import_number_field($row['Price'] ?? ($row['price'] ?? null));
+            $raw_status  = $this->import_field($row['Status'] ?? ($row['status'] ?? null));
+            $status      = $this->normalize_import_status($raw_status);
+            $site_name_key = strtolower(trim((string) ($site_name ?? '')));
+
+            // Required fields.
+            if (!$site_name)      $row_errors[] = "Line $line: Site Name is missing";
+            if (!$plot_number)    $row_errors[] = "Line $line: Plot Number is missing";
+            if (!$size)           $row_errors[] = "Line $line: Plot Size is missing";
+            if (!$dimension)      $row_errors[] = "Line $line: Dimension is missing";
+            if (!$facing)         $row_errors[] = "Line $line: Facing is missing";
+            if ($price === null)  $row_errors[] = "Line $line: Price is missing";
+            if (!$raw_status)     $row_errors[] = "Line $line: Status is missing";
+
+            // Site ownership + selected-site match checks.
+            if ($site_name) {
+                if (!isset($admin_site_name_map[$site_name_key])) {
+                    $owners = $global_site_owner_map[$site_name_key] ?? [];
+                    $has_other_admin_owner = !empty($owners) && !isset($owners[(int) $admin_id]);
+                    if ($has_other_admin_owner) {
+                        $row_errors[] = "Line $line: Site Name '{$site_name}' belongs to another admin";
+                    } else {
+                        $row_errors[] = "Line $line: Site Name '{$site_name}' is not found for this admin";
+                    }
+                } elseif ((int) $admin_site_name_map[$site_name_key] !== $site_id) {
+                    $row_errors[] = "Line $line: Site Name '{$site_name}' does not match selected site '{$site->name}'";
                 }
-                $existing_plot_numbers[$plot_key] = true;
             }
 
-            $insert_rows[] = [
-                'admin_id' => $admin_id,
-                'site_id' => $site_id,
+            // Status checks.
+            if ($raw_status && $status === null) {
+                $row_errors[] = "Line $line: Invalid Status '{$raw_status}' (allowed: available, pending)";
+            }
+            if ($status === 'sold') {
+                $row_errors[] = "Line $line: Sold plots cannot be imported. Use only available or pending";
+            }
+
+            // Duplicate inside Excel file.
+            if ($plot_number) {
+                $plot_key = strtolower($plot_number);
+                if (isset($excel_plot_numbers[$plot_key])) {
+                    $row_errors[] = "Line $line: Duplicate Plot Number inside Excel file";
+                } else {
+                    $excel_plot_numbers[$plot_key] = true;
+                }
+            }
+
+            // Duplicate in database for current admin+site (in-memory lookup).
+            if ($plot_number) {
+                $plot_key = strtolower($plot_number);
+                if (isset($db_plot_numbers[$plot_key])) {
+                    $row_errors[] = "Line $line: Plot Number already exists";
+                }
+            }
+
+            if (!empty($row_errors)) {
+                $errors = array_merge($errors, $row_errors);
+                if (count($errors) >= $max_error_messages) {
+                    break;
+                }
+                continue;
+            }
+
+            // Reserve key immediately so same-file later rows are treated duplicate.
+            $db_plot_numbers[strtolower($plot_number)] = true;
+
+            $insert_data[] = [
+                'admin_id'    => $admin_id,
+                'site_id'     => $site_id,
                 'plot_number' => $plot_number,
-                'size' => $size,
-                'dimension' => $dimension,
-                'facing' => $facing,
-                'price' => $price,
-                'status' => $status,
-                'isActive' => 1,
-                'created_at' => date('Y-m-d')
+                'size'        => $size,
+                'dimension'   => $dimension,
+                'facing'      => $facing,
+                'price'       => $price,
+                'status'      => $status,
+                'isActive'    => 1,
+                'created_at'  => date('Y-m-d')
             ];
         }
 
-        if (empty($insert_rows)) {
+        if (!empty($errors)) {
             echo json_encode([
-                'status' => 'error',
-                'message' => 'No valid rows to import',
-                'inserted' => 0,
-                'skipped_duplicates' => $skipped_duplicates,
-                'skipped_empty' => $skipped_empty
+                'status'  => 'error',
+                'message' => 'Import failed. Please fix the row errors.',
+                'errors'  => $errors,
+                'error_count' => count($errors)
+            ]);
+            return;
+        }
+
+        if (empty($insert_data)) {
+            echo json_encode([
+                'status'  => 'error',
+                'message' => 'No valid rows found to import'
             ]);
             return;
         }
 
         $this->db->trans_start();
-
-        $chunks = array_chunk($insert_rows, 200);
-        foreach ($chunks as $chunk) {
+        foreach (array_chunk($insert_data, 500) as $chunk) {
             $this->db->insert_batch('plots', $chunk);
         }
 
@@ -362,24 +634,19 @@ class Plots extends My_Controller
 
         $this->db->where('id', $site_id)
             ->update('sites', ['site_value' => $total_value]);
-
         $this->db->trans_complete();
 
         if ($this->db->trans_status() === FALSE) {
             echo json_encode([
-                'status' => 'error',
-                'message' => 'Import failed. Please check the data format and try again.'
+                'status'  => 'error',
+                'message' => 'Import failed while saving data'
             ]);
             return;
         }
 
         echo json_encode([
-            'status' => 'success',
-            'message' => 'Plots imported successfully',
-            'inserted' => count($insert_rows),
-            'skipped_duplicates' => $skipped_duplicates,
-            'skipped_empty' => $skipped_empty,
-            'site_value' => $total_value
+            'status'   => 'success',
+            'inserted' => count($insert_data)
         ]);
     }
 
@@ -425,7 +692,7 @@ class Plots extends My_Controller
     {
         $clean = $this->import_field($value);
         if ($clean === null) {
-            return 'available';
+            return null;
         }
 
         $status = strtolower($clean);
@@ -433,28 +700,30 @@ class Plots extends My_Controller
             return 'sold';
         }
         if ($status === 'booked' || $status === 'reserved' || $status === 'pending') {
-            return 'booked';
+            return 'pending';
+        }
+        if ($status === 'available') {
+            return 'available';
         }
 
-        return 'available';
+        return null;
     }
+    public function get_plots_ajax()
+    {
+        header('Content-Type: application/json');
 
-   public function get_plots_ajax()
-{
-    header('Content-Type: application/json');
+        $limit   = 10;
+        $page    = (int) $this->input->get('page');
+        $search  = trim($this->input->get('search'));
+        $site_id = (int) $this->input->get('site_id');
 
-    $limit   = 10;
-    $page    = (int) $this->input->get('page');
-    $search  = trim($this->input->get('search'));
-    $site_id = (int) $this->input->get('site_id');
+        if ($page < 1) $page = 1;
+        $offset = ($page - 1) * $limit;
 
-    if ($page < 1) $page = 1;
-    $offset = ($page - 1) * $limit;
-
-    // -------------------------------
-    // MAIN QUERY (WITH BUYER)
-    // -------------------------------
-    $this->db->select('
+        // -------------------------------
+        // MAIN QUERY (WITH BUYER)
+        // -------------------------------
+        $this->db->select('
         p.id,
         p.plot_number,
         p.size,
@@ -462,79 +731,98 @@ class Plots extends My_Controller
         p.facing,
         p.price,
         p.status,
+        p.isActive,
         s.name AS site_name,
         b.id   AS buyer_id,
-        b.name AS buyer_name
+        b.name AS buyer_name,
+        (
+            SELECT COUNT(*)
+            FROM cash_payment_logs cpl
+            WHERE cpl.buyer_id = b.id
+              AND LOWER(COALESCE(cpl.status, "")) = "pending"
+              AND LOWER(COALESCE(cpl.notes, "")) LIKE "%emi%"
+        ) AS pending_installment_requests
     ');
 
-    $this->db->from('plots p');
-    $this->db->join('sites s', 's.id = p.site_id', 'left');
-    $this->db->join('buyer b', 'b.plot_id = p.id AND b.isActive = 1', 'left');
+        $this->db->from('plots p');
+        $this->db->join('sites s', 's.id = p.site_id', 'left');
+        // Pick only the latest active buyer row per plot to avoid duplicate plot rows.
+        $this->db->join(
+            'buyer b',
+            'b.id = (SELECT MAX(b2.id) FROM buyer b2 WHERE b2.plot_id = p.id AND b2.isActive = 1)',
+            'left'
+        );
+        $this->db->order_by('id', 'DESC');
 
-    $this->db->where('p.isActive', 1);
+        $this->db->where('p.isActive', 1);
 
-    if ($site_id > 0) {
-        $this->db->where('p.site_id', $site_id);
+        if ($site_id > 0) {
+            $this->db->where('p.site_id', $site_id);
+        }
+
+        if (!empty($search)) {
+            $this->db->group_start();
+            $this->db->like('p.plot_number', $search);
+            $this->db->or_like('s.name', $search);
+            $this->db->or_like('b.name', $search); // search buyer also
+            $this->db->group_end();
+        }
+
+        // Count
+        $total_records = $this->db->count_all_results('', FALSE);
+
+        // Pagination
+        $this->db->order_by('p.id', 'DESC');
+        $this->db->limit($limit, $offset);
+
+        $plots = $this->db->get()->result();
+
+        // Hard safety filter: only active plots should be returned to plot_view.
+        $plots = array_values(array_filter($plots, function ($plot) {
+            return isset($plot->isActive) ? ((int) $plot->isActive === 1) : true;
+        }));
+
+        // -------------------------------
+        // STATUS COUNTS
+        // -------------------------------
+        $this->db->select('LOWER(TRIM(status)) as status_key, COUNT(*) as total_count');
+        $this->db->from('plots');
+        $this->db->where('isActive', 1);
+
+        if ($site_id > 0) {
+            $this->db->where('site_id', $site_id);
+        }
+
+        $this->db->group_by('LOWER(TRIM(status))');
+        $status_rows = $this->db->get()->result();
+
+        $status_counts = [
+            'available' => 0,
+            'booked'    => 0,
+            'sold'      => 0
+        ];
+
+        foreach ($status_rows as $row) {
+            $key = strtolower(trim($row->status_key));
+            if ($key == 'sold') $status_counts['sold'] += $row->total_count;
+            elseif ($key == 'booked' || $key == 'pending') $status_counts['booked'] += $row->total_count;
+            else $status_counts['available'] += $row->total_count;
+        }
+
+        // -------------------------------
+        // RESPONSE
+        // -------------------------------
+        echo json_encode([
+            'status' => true,
+            'data'   => $plots,
+            'status_counts' => $status_counts,
+            'pagination' => [
+                'current_page'  => $page,
+                'total_pages'  => ceil($total_records / $limit),
+                'total_records' => $total_records
+            ]
+        ]);
     }
-
-    if (!empty($search)) {
-        $this->db->group_start();
-        $this->db->like('p.plot_number', $search);
-        $this->db->or_like('s.name', $search);
-        $this->db->or_like('b.name', $search); // search buyer also
-        $this->db->group_end();
-    }
-
-    // Count
-    $total_records = $this->db->count_all_results('', FALSE);
-
-    // Pagination
-    $this->db->order_by('p.id', 'DESC');
-    $this->db->limit($limit, $offset);
-
-    $plots = $this->db->get()->result();
-
-    // -------------------------------
-    // STATUS COUNTS
-    // -------------------------------
-    $this->db->select('LOWER(TRIM(status)) as status_key, COUNT(*) as total_count');
-    $this->db->from('plots');
-    $this->db->where('isActive', 1);
-
-    if ($site_id > 0) {
-        $this->db->where('site_id', $site_id);
-    }
-
-    $this->db->group_by('LOWER(TRIM(status))');
-    $status_rows = $this->db->get()->result();
-
-    $status_counts = [
-        'available' => 0,
-        'booked'    => 0,
-        'sold'      => 0
-    ];
-
-    foreach ($status_rows as $row) {
-        $key = strtolower(trim($row->status_key));
-        if ($key == 'sold') $status_counts['sold'] += $row->total_count;
-        elseif ($key == 'booked') $status_counts['booked'] += $row->total_count;
-        else $status_counts['available'] += $row->total_count;
-    }
-
-    // -------------------------------
-    // RESPONSE
-    // -------------------------------
-    echo json_encode([
-        'status' => true,
-        'data'   => $plots,
-        'status_counts' => $status_counts,
-        'pagination' => [
-            'current_page'  => $page,
-            'total_pages'  => ceil($total_records / $limit),
-            'total_records'=> $total_records
-        ]
-    ]);
-}
 
 
 
@@ -551,40 +839,105 @@ class Plots extends My_Controller
     }
     public function edit_plot($id)
     {
+        $admin_id = $this->admin['user_id'] ?? null;
         $data['plots'] = $this->db->where('id', $id)->get('plots')->row();
-        $data['sites'] = $this->db->get('sites')->result(); // for dropdown
+        $data['sites'] = $this->db->where('admin_id', $admin_id)->get('sites')->result(); // for dropdown
+        $data['users'] = $this->db->select('id, name')
+            ->from('users')
+            ->where('admin_id', $admin_id)
+            ->where('isActive', 1)
+            ->order_by('name', 'ASC')
+            ->get()
+            ->result();
+
+        // Check for active buyer details for pre-filling the sold modal
+        $data['buyer'] = $this->db->get_where('buyer', [
+            'plot_id' => $id,
+            'isActive' => 1
+        ])->row();
+
+        if ($data['buyer']) {
+            $data['payment_details'] = $this->db->get_where('payment_details', [
+                'buyer_id' => $data['buyer']->id
+            ])->row();
+        } else {
+            $data['payment_details'] = null;
+        }
 
         $this->load->view('header');
         $this->load->view('edit_plot_form', $data);
         $this->load->view('footer');
     }
 
-    public function buyer_details($plot_id)
+    public function buyer_details($id)
     {
-        // 1. Fetch Buyer
+        $id = (int) $id;
+        if ($id <= 0) {
+            show_404();
+            return;
+        }
+
+        // 1) Prefer exact buyer id (correct link behavior).
         $buyer = $this->db->get_where("buyer", [
-            "plot_id" => $plot_id,
+            "id" => $id,
             "isActive" => 1
         ])->row();
+
+        // 2) Backward compatibility for old links that may pass plot_id.
+        if (!$buyer) {
+            $buyer = $this->db->order_by("id", "DESC")
+                ->get_where("buyer", [
+                    "plot_id" => $id,
+                    "isActive" => 1
+                ])->row();
+        }
 
         if (!$buyer) {
             show_404();
             return;
         }
 
+        $buyer_id = (int) $buyer->id;
+        $plot_id = (int) $buyer->plot_id;
+
         // 2. Fetch Payment Details
-        $payment = $this->db->get_where("payment_details", [
-            "plot_id" => $plot_id
-        ])->row();
+        $payment = $this->db->order_by("id", "DESC")
+            ->get_where("payment_details", [
+                "buyer_id" => $buyer_id
+            ])->row();
+
+        if (!$payment) {
+            $payment = $this->db->order_by("id", "DESC")
+                ->get_where("payment_details", [
+                    "plot_id" => $plot_id
+                ])->row();
+        }
         // 3A. Calculate remaining amount (from cash logs)
         $total_paid = 0;
+        $down_payment_in_logs = false;
+        $payment_down_payment = (float) ($payment->down_payment ?? 0);
 
         $cash_logs = $this->db->get_where("cash_payment_logs", [
-            "plot_id" => $plot_id
+            "buyer_id" => $buyer_id,
+            "status" => "approve"
         ])->result();
 
         foreach ($cash_logs as $log) {
-            $total_paid += (float) $log->paid_amount;
+            $paid_amount = (float) ($log->paid_amount ?? 0);
+            $total_paid += $paid_amount;
+
+            // Detect whether down payment is already represented in approved cash logs.
+            $note = strtolower((string) ($log->notes ?? ""));
+            if ($payment_down_payment > 0) {
+                if (strpos($note, "down") !== false || abs($paid_amount - $payment_down_payment) < 0.01) {
+                    $down_payment_in_logs = true;
+                }
+            }
+        }
+
+        // Include configured down payment if it is not present in approved cash logs.
+        if ($payment_down_payment > 0 && !$down_payment_in_logs) {
+            $total_paid += $payment_down_payment;
         }
 
         $remaining_amount = 0;
@@ -598,10 +951,34 @@ class Plots extends My_Controller
 
         // 3. Fetch EMI logs (if EMI)
         $emi = [];
-        if ($payment && $payment->payment_mode == "EMI") {
-            $emi = $this->db->order_by("month_no", "ASC")
-                ->get_where("emi_logs", ["plot_id" => $plot_id])
-                ->result();
+        if ($payment && strtoupper((string) $payment->payment_mode) === "EMI") {
+            $payment_id = (int) ($payment->id ?? 0);
+            if ($payment_id > 0) {
+                $emi = $this->db->order_by("month_no", "ASC")
+                    ->get_where("emi_logs", ["payment_id" => $payment_id])
+                    ->result();
+            } else {
+                $emi = $this->db->order_by("month_no", "ASC")
+                    ->get_where("emi_logs", ["buyer_id" => $buyer_id])
+                    ->result();
+            }
+        }
+
+        $total_emi_installments = 0;
+        $paid_emi_installments = 0;
+        $remaining_emi_installments = 0;
+        if ($payment && strtoupper((string) ($payment->payment_mode ?? "")) === "EMI") {
+            $duration = (int) ($payment->emi_duration ?? 0);
+            $total_emi_installments = $duration > 0 ? $duration : count($emi);
+            foreach ($emi as $emi_row) {
+                if (strtolower((string) ($emi_row->status ?? "pending")) === "approve") {
+                    $paid_emi_installments++;
+                }
+            }
+            if ($paid_emi_installments > $total_emi_installments) {
+                $paid_emi_installments = $total_emi_installments;
+            }
+            $remaining_emi_installments = max(0, $total_emi_installments - $paid_emi_installments);
         }
 
         // 4. Fetch plot details + site name
@@ -616,7 +993,10 @@ class Plots extends My_Controller
             "payment" => $payment,
             "emi" => $emi,
             "plot" => $plot,
-            "remaining_amount" => $remaining_amount
+            "remaining_amount" => $remaining_amount,
+            "total_emi_installments" => $total_emi_installments,
+            "paid_emi_installments" => $paid_emi_installments,
+            "remaining_emi_installments" => $remaining_emi_installments
         ];
         // echo "<pre>";
         // print_r($data);
@@ -671,43 +1051,531 @@ class Plots extends My_Controller
         $this->db->where("plots.id", $plot_id);
         $plot = $this->db->get()->row();
 
-        // 4. Fetch Payment Logs
-        $this->db->from("cash_payment_logs");
-        $this->db->where("buyer_id", $buyer_id);
+        // Ensure an initial cash log exists for old records with only payment_details.down_payment
+        $cash_logs = $this->db->order_by("id", "DESC")
+            ->get_where("cash_payment_logs", ["buyer_id" => $buyer_id])
+            ->result();
 
-        // Search
-        if (!empty($search)) {
-            $this->db->group_start();
-            $this->db->like("buyer_name", $search);
-            $this->db->or_like("user_name", $search);
-            $this->db->group_end();
-        }
-
-        $total_rows = $this->db->count_all_results("", false);
-        $this->db->limit($limit, $offset);
-
-        $logs = $this->db->get()->result();
-
-        // Fallback: if no cash_payment_logs, show initial payment from payment_details
-        if (empty($logs)) {
+        if (empty($cash_logs)) {
             $payment_details = $this->db->get_where("payment_details", [
                 "buyer_id" => $buyer_id
             ])->row();
 
             if ($payment_details) {
-                $logs = [
-                    (object) [
-                        "id" => null,
-                        "paid_amount" => $payment_details->down_payment ?? 0,
-                        "created_on" => $payment_details->created_on ?? $payment_details->created_at ?? date('Y-m-d'),
-                        "status" => "approve",
-                    ]
-                ];
+                $down_payment = (float) ($payment_details->down_payment ?? 0);
+                if ($down_payment > 0) {
+                    $total_price = (float) ($payment_details->total_price ?? 0);
+                    $remaining_amount = max(0, $total_price - $down_payment);
+                    $created_on = $payment_details->created_on ?? $payment_details->created_at ?? date('Y-m-d H:i:s');
 
-                $total_rows = 1;
-                $page = 1;
+                    $columns = $this->db->list_fields("cash_payment_logs");
+                    $allowed = array_flip($columns);
+
+                    $candidate = [
+                        "admin_id" => $this->admin['user_id'] ?? null,
+                        "user_id" => $user_id,
+                        "buyer_id" => $buyer_id,
+                        "plot_id" => $plot_id,
+                        "buyer_name" => $buyer->name ?? null,
+                        "user_name" => $user->name ?? null,
+                        "paid_amount" => $down_payment,
+                        "remaining_amount" => $remaining_amount,
+                        "total_price" => $total_price,
+                        "status" => "approve",
+                        "notes" => "Initial down payment",
+                        "created_on" => $created_on,
+                    ];
+
+                    $insert_data = [];
+                    foreach ($candidate as $field => $value) {
+                        if (isset($allowed[$field])) {
+                            $insert_data[$field] = $value;
+                        }
+                    }
+
+                    if (!empty($insert_data)) {
+                        $this->db->insert("cash_payment_logs", $insert_data);
+                        $cash_logs = $this->db->order_by("id", "DESC")
+                            ->get_where("cash_payment_logs", ["buyer_id" => $buyer_id])
+                            ->result();
+                    }
+                }
             }
         }
+
+        // Fetch EMI logs strictly for this buyer/payment (include full EMI schedule).
+        $payment_ids = $this->db->select("id")
+            ->from("payment_details")
+            ->where("buyer_id", $buyer_id)
+            ->get()
+            ->result_array();
+        $payment_ids = array_map("intval", array_column($payment_ids, "id"));
+
+        $payment_installment_map = [];
+        $payment_meta_map = [];
+        $total_installments_expected = 0;
+        $payment_rows = [];
+        $down_payment_seed_logs = [];
+        if (!empty($payment_ids)) {
+            $payment_fields = $this->db->list_fields("payment_details");
+            $installment_col = null;
+            if (in_array("installment_amount", $payment_fields, true)) {
+                $installment_col = "installment_amount";
+            } elseif (in_array("insatallment_amount", $payment_fields, true)) {
+                $installment_col = "insatallment_amount";
+            }
+
+            $base_cols = [
+                "id",
+                "buyer_id",
+                "plot_id",
+                "emi_duration",
+                "emi_start_date",
+                "remaining_amount",
+                "total_price",
+                "down_payment"
+            ];
+            if (in_array("created_on", $payment_fields, true)) {
+                $base_cols[] = "created_on";
+            }
+            if (in_array("created_at", $payment_fields, true)) {
+                $base_cols[] = "created_at";
+            }
+            $select_cols = implode(", ", $base_cols);
+            if ($installment_col !== null) {
+                $select_cols .= ", {$installment_col} AS installment_amount";
+            }
+
+            $payment_rows = $this->db->select($select_cols)
+                ->from("payment_details")
+                ->where_in("id", $payment_ids)
+                ->get()
+                ->result();
+
+            foreach ($payment_rows as $p) {
+                $duration = (int) ($p->emi_duration ?? 0);
+                $installment_amount = 0.0;
+                if ($installment_col !== null) {
+                    $installment_amount = (float) ($p->installment_amount ?? 0);
+                }
+                if ($installment_amount <= 0 && $duration > 0) {
+                    $remaining_amount = (float) ($p->remaining_amount ?? 0);
+                    if ($remaining_amount > 0) {
+                        $installment_amount = round($remaining_amount / $duration, 2);
+                    }
+                }
+                if ($installment_amount <= 0 && $duration > 0) {
+                    $total_price = (float) ($p->total_price ?? 0);
+                    $down_payment = (float) ($p->down_payment ?? 0);
+                    $balance = max(0, $total_price - $down_payment);
+                    if ($balance > 0) {
+                        $installment_amount = round($balance / $duration, 2);
+                    }
+                }
+
+                $payment_installment_map[(int) $p->id] = $installment_amount;
+                $payment_meta_map[(int) $p->id] = [
+                    "buyer_id" => (int) ($p->buyer_id ?? $buyer_id),
+                    "plot_id" => (int) ($p->plot_id ?? $plot_id),
+                    "duration" => $duration,
+                    "start_date" => (string) ($p->emi_start_date ?? ""),
+                    "installment_amount" => $installment_amount,
+                ];
+
+                if ($duration > $total_installments_expected) {
+                    $total_installments_expected = $duration;
+                }
+            }
+
+            // Guarantee down payment visibility even when cash logs already exist.
+            foreach ($payment_rows as $p) {
+                $down_payment = (float) ($p->down_payment ?? 0);
+                if ($down_payment <= 0) {
+                    continue;
+                }
+
+                $has_down_payment_log = false;
+                foreach ($cash_logs as $cash_log) {
+                    $cash_amount = (float) ($cash_log->paid_amount ?? 0);
+                    if ($cash_amount <= 0) {
+                        continue;
+                    }
+
+                    $cash_notes = strtolower((string) ($cash_log->notes ?? ""));
+                    $note_marks_down_payment =
+                        strpos($cash_notes, "down payment") !== false ||
+                        strpos($cash_notes, "initial payment") !== false;
+                    $amount_matches_down_payment = abs($cash_amount - $down_payment) < 0.01;
+
+                    if ($note_marks_down_payment || $amount_matches_down_payment) {
+                        $cash_log->is_down_payment = 1;
+                        $has_down_payment_log = true;
+                        break;
+                    }
+                }
+
+                if ($has_down_payment_log) {
+                    continue;
+                }
+
+                $virtual_down = new stdClass();
+                $virtual_down->id = 0;
+                $virtual_down->log_source = "cash";
+                $virtual_down->buyer_id = (int) ($p->buyer_id ?? $buyer_id);
+                $virtual_down->plot_id = (int) ($p->plot_id ?? $plot_id);
+                $virtual_down->paid_amount = $down_payment;
+                $virtual_down->status = "approve";
+                $virtual_down->created_on = $p->created_on ?? ($p->created_at ?? date('Y-m-d H:i:s'));
+                $virtual_down->notes = "Initial down payment";
+                $virtual_down->is_requested = 0;
+                $virtual_down->is_down_payment = 1;
+                $down_payment_seed_logs[] = $virtual_down;
+            }
+        }
+
+        $this->db->from("emi_logs");
+        if (!empty($payment_ids)) {
+            // Primary key for EMI linkage should be payment_id.
+            // Some legacy rows may carry incorrect buyer_id, so do not over-filter here.
+            $this->db->where_in("payment_id", $payment_ids);
+        } else {
+            // Fallback when payment_details is missing.
+            $this->db->where("buyer_id", $buyer_id);
+        }
+        $this->db->order_by("month_no", "ASC");
+        $emi_logs = $this->db->get()->result();
+
+        // Deduplicate accidental repeated EMI rows: keep one row per payment_id + month_no.
+        $emi_unique = [];
+        $status_rank = function ($status) {
+            $s = strtolower((string) $status);
+            if ($s === "approve") {
+                return 4;
+            }
+            if ($s === "pending" || $s === "requested") {
+                return 3;
+            }
+            if ($s === "reject") {
+                return 2;
+            }
+            return 1;
+        };
+
+        foreach ($emi_logs as $emi) {
+            $payment_id_key = (int) ($emi->payment_id ?? 0);
+            $month_no_key = (int) ($emi->month_no ?? 0);
+            if ($month_no_key > 0) {
+                $key = "pm:{$payment_id_key}:m:{$month_no_key}";
+            } else {
+                $date_key = (string) ($emi->emi_date ?? $emi->created_on ?? $emi->id ?? "");
+                $key = "pm:{$payment_id_key}:d:{$date_key}";
+            }
+
+            $existing = $emi_unique[$key] ?? null;
+            if ($existing === null) {
+                $emi_unique[$key] = $emi;
+                continue;
+            }
+
+            $cur_amount = (float) ($emi->emi_amount ?? 0);
+            $old_amount = (float) ($existing->emi_amount ?? 0);
+            $cur_rank = $status_rank($emi->status ?? "");
+            $old_rank = $status_rank($existing->status ?? "");
+
+            $replace = false;
+            if ($cur_amount > $old_amount) {
+                $replace = true;
+            } elseif ($cur_amount === $old_amount && $cur_rank > $old_rank) {
+                $replace = true;
+            } elseif ($cur_amount === $old_amount && $cur_rank === $old_rank && (int) ($emi->id ?? 0) > (int) ($existing->id ?? 0)) {
+                $replace = true;
+            }
+
+            if ($replace) {
+                $emi_unique[$key] = $emi;
+            }
+        }
+
+        $emi_logs = array_values($emi_unique);
+
+        // Ensure full EMI schedule is visible even if emi_logs rows are missing/incomplete.
+        if (!empty($payment_meta_map)) {
+            $existing_month_keys = [];
+            foreach ($emi_logs as $emi) {
+                $existing_month_keys[(int) ($emi->payment_id ?? 0) . ":" . (int) ($emi->month_no ?? 0)] = true;
+            }
+
+            foreach ($payment_meta_map as $pid => $meta) {
+                $duration = (int) ($meta["duration"] ?? 0);
+                $start_date = (string) ($meta["start_date"] ?? "");
+                $installment_amount = (float) ($meta["installment_amount"] ?? 0);
+                if ($duration <= 0 || empty($start_date) || $installment_amount <= 0) {
+                    continue;
+                }
+
+                for ($m = 1; $m <= $duration; $m++) {
+                    $k = $pid . ":" . $m;
+                    if (isset($existing_month_keys[$k])) {
+                        continue;
+                    }
+
+                    $emi_date = date("Y-m-d", strtotime($start_date . " +" . ($m - 1) . " month"));
+                    $virtual = new stdClass();
+                    $virtual->id = 0;
+                    $virtual->payment_id = $pid;
+                    $virtual->buyer_id = (int) ($meta["buyer_id"] ?? $buyer_id);
+                    $virtual->plot_id = (int) ($meta["plot_id"] ?? $plot_id);
+                    $virtual->month_no = $m;
+                    $virtual->emi_date = $emi_date;
+                    $virtual->emi_amount = $installment_amount;
+                    $virtual->status = "pending";
+                    $virtual->created_on = $emi_date . " 00:00:00";
+                    $emi_logs[] = $virtual;
+                }
+            }
+        }
+        usort($emi_logs, function ($a, $b) {
+            $ma = (int) ($a->month_no ?? 0);
+            $mb = (int) ($b->month_no ?? 0);
+            if ($ma !== $mb) {
+                return $ma <=> $mb;
+            }
+            $ta = strtotime((string) ($a->emi_date ?? $a->created_on ?? ""));
+            $tb = strtotime((string) ($b->emi_date ?? $b->created_on ?? ""));
+            return $ta <=> $tb;
+        });
+
+        $merged_logs = [];
+        $effective_emi_rows = [];
+        $today_ts = strtotime(date("Y-m-d"));
+
+        // Split EMI-cash requests so they map into installment slots, not as extra rows.
+        $emi_cash_requests = [];
+        $other_cash_logs = [];
+        foreach ($cash_logs as $log) {
+            $log_amount = (float) ($log->paid_amount ?? 0);
+            $log_notes = strtolower((string) ($log->notes ?? ""));
+            $is_emi_cash = ($log_amount > 0 && strpos($log_notes, "emi") !== false);
+            if ($is_emi_cash) {
+                $emi_cash_requests[] = $log;
+            } else {
+                $other_cash_logs[] = $log;
+            }
+        }
+
+        usort($emi_cash_requests, function ($a, $b) {
+            $ta = strtotime((string) ($a->created_on ?? $a->created_at ?? ""));
+            $tb = strtotime((string) ($b->created_on ?? $b->created_at ?? ""));
+            if ($ta === $tb) {
+                return ((int) ($a->id ?? 0)) <=> ((int) ($b->id ?? 0));
+            }
+            return $ta <=> $tb;
+        });
+
+        $request_idx = 0;
+        $requests_by_month = [];
+        $unmapped_requests = [];
+        foreach ($emi_cash_requests as $req) {
+            $notes = (string) ($req->notes ?? "");
+            if (preg_match('/\[EMI:(\d+):(\d+)\]/i', $notes, $m)) {
+                $k = ((int) $m[1]) . ':' . ((int) $m[2]);
+                if (!isset($requests_by_month[$k])) {
+                    $requests_by_month[$k] = [];
+                }
+                $requests_by_month[$k][] = $req;
+            } else {
+                $unmapped_requests[] = $req;
+            }
+        }
+
+        foreach ($emi_logs as $emi) {
+            $emi_amount = (float) ($emi->emi_amount ?? 0);
+            if ($emi_amount <= 0) {
+                $p_id = (int) ($emi->payment_id ?? 0);
+                if ($p_id > 0 && isset($payment_installment_map[$p_id])) {
+                    $emi_amount = (float) $payment_installment_map[$p_id];
+                }
+            }
+
+            $entry = new stdClass();
+            $entry->month_no = $emi->month_no ?? null;
+            $entry->notes = "EMI installment" . (!empty($entry->month_no) ? (" #" . $entry->month_no) : "");
+            $entry->paid_amount = $emi_amount;
+
+            $req = null;
+            $k = ((int) ($emi->payment_id ?? 0)) . ':' . ((int) ($emi->month_no ?? 0));
+            if (!empty($requests_by_month[$k])) {
+                $req = array_shift($requests_by_month[$k]);
+            } elseif (isset($unmapped_requests[$request_idx])) {
+                $req = $unmapped_requests[$request_idx++];
+            }
+
+            if ($req !== null) {
+                // Early payment request consumes the next installment slot.
+                $entry->id = $req->id;
+                $entry->log_source = "cash";
+                $entry->buyer_id = $req->buyer_id ?? $emi->buyer_id;
+                $entry->plot_id = $req->plot_id ?? $emi->plot_id;
+                $entry->paid_amount = (float) ($req->paid_amount ?? $emi_amount);
+                $entry->status = $req->status ?? "pending";
+                $entry->created_on = $req->created_on ?? ($req->created_at ?? ($emi->emi_date ?? $emi->created_on ?? null));
+                $entry->notes = $req->notes ?? $entry->notes;
+                $entry->is_requested = 1;
+                $entry->scheduled_on = $emi->emi_date ?? ($emi->created_on ?? null);
+
+                // Backfill/sync EMI status with mapped cash request (for old data too).
+                $emi_id = (int) ($emi->id ?? 0);
+                if ($emi_id > 0) {
+                    $mapped_status = strtolower((string) ($req->status ?? "pending"));
+                    $current_status = strtolower((string) ($emi->status ?? "pending"));
+                    $mapped_amount = (float) ($req->paid_amount ?? $emi_amount);
+                    $current_amount = (float) ($emi->emi_amount ?? 0);
+                    if ($mapped_status !== $current_status || $mapped_amount !== $current_amount) {
+                        $this->db->where("id", $emi_id)->update("emi_logs", [
+                            "status" => $mapped_status,
+                            "emi_amount" => $mapped_amount
+                        ]);
+                        // Keep in-memory row consistent for summary calculations below.
+                        $emi->status = $mapped_status;
+                        $emi->emi_amount = $mapped_amount;
+                    }
+                }
+            } else {
+                $entry->id = $emi->id;
+                $entry->log_source = "emi";
+                $entry->buyer_id = $emi->buyer_id;
+                $entry->plot_id = $emi->plot_id;
+                $entry->status = $emi->status ?? "pending";
+                $entry->created_on = $emi->emi_date ?? ($emi->created_on ?? null);
+                $entry->is_requested = 0;
+                $entry->scheduled_on = $emi->emi_date ?? ($emi->created_on ?? null);
+            }
+
+            $merged_logs[] = $entry;
+            $effective_emi_rows[] = $entry;
+        }
+
+        foreach ($down_payment_seed_logs as $seed) {
+            $other_cash_logs[] = $seed;
+        }
+
+        foreach ($other_cash_logs as $log) {
+            $log->log_source = "cash";
+            $log->created_on = $log->created_on ?? ($log->created_at ?? null);
+            $log->paid_amount = (float) ($log->paid_amount ?? 0);
+            $log->is_requested = 0;
+            $merged_logs[] = $log;
+        }
+
+        // Skip invalid/legacy rows that carry no payable value.
+        $merged_logs = array_values(array_filter($merged_logs, function ($row) {
+            return (float) ($row->paid_amount ?? 0) > 0;
+        }));
+
+        // Summary cards data for payment_data view (based on effective installment rows).
+        $total_installments = $total_installments_expected > 0 ? $total_installments_expected : count($effective_emi_rows);
+        $approved_installments = 0;
+        $progress_installments = 0;
+        $pending_amount = 0.0;
+        $receiving_amount = 0.0;
+        $next_installment = null;
+
+        foreach ($effective_emi_rows as $emi_row) {
+            $emi_status = strtolower((string) ($emi_row->status ?? "pending"));
+            $emi_amount = (float) ($emi_row->paid_amount ?? 0);
+            $is_requested = (int) ($emi_row->is_requested ?? 0) === 1;
+            $emi_ts = strtotime((string) ($emi_row->scheduled_on ?? $emi_row->created_on ?? ""));
+
+            if ($emi_status === "approve") {
+                $approved_installments++;
+                $progress_installments++;
+                $receiving_amount += $emi_amount;
+            } else {
+                if ($is_requested) {
+                    // Buyer already requested/paid this installment (awaiting approval),
+                    // so move progression forward but do not add to received amount yet.
+                    $progress_installments++;
+                } else {
+                    $pending_amount += $emi_amount;
+                    if ($emi_ts !== false) {
+                        if ($next_installment === null || $emi_ts < (int) $next_installment["ts"]) {
+                            $next_installment = [
+                                "date" => date("Y-m-d", $emi_ts),
+                                "amount" => $emi_amount,
+                                "ts" => $emi_ts
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        foreach ($other_cash_logs as $cash) {
+            $cash_status = strtolower((string) ($cash->status ?? "pending"));
+            $cash_amount = (float) ($cash->paid_amount ?? 0);
+            if ($cash_status === "approve") {
+                $receiving_amount += $cash_amount;
+            }
+        }
+
+        $remaining_installments = max(0, $total_installments - $progress_installments);
+
+        // Search in merged records
+        if (!empty($search)) {
+            $q = strtolower(trim($search));
+            $merged_logs = array_values(array_filter($merged_logs, function ($row) use ($q, $buyer, $user, $plot) {
+                $haystack = implode(" ", [
+                    strtolower((string) ($buyer->name ?? "")),
+                    strtolower((string) ($user->name ?? "")),
+                    strtolower((string) ($plot->site_name ?? "")),
+                    strtolower((string) ($plot->plot_number ?? "")),
+                    strtolower((string) ($row->status ?? "")),
+                    strtolower((string) ($row->notes ?? "")),
+                    strtolower((string) ($row->created_on ?? "")),
+                    strtolower((string) ($row->paid_amount ?? "")),
+                ]);
+                return strpos($haystack, $q) !== false;
+            }));
+        }
+
+        usort($merged_logs, function ($a, $b) use ($today_ts) {
+            $ta = strtotime((string) ($a->created_on ?? ""));
+            $tb = strtotime((string) ($b->created_on ?? ""));
+            $sa = strtolower((string) ($a->status ?? ""));
+            $sb = strtolower((string) ($b->status ?? ""));
+            $src_a = strtolower((string) ($a->log_source ?? ""));
+            $src_b = strtolower((string) ($b->log_source ?? ""));
+            $notes_a = strtolower((string) ($a->notes ?? ""));
+            $notes_b = strtolower((string) ($b->notes ?? ""));
+
+            $is_cash_emi_req_a = $src_a === "cash" && $sa === "pending" && strpos($notes_a, "emi") !== false;
+            $is_cash_emi_req_b = $src_b === "cash" && $sb === "pending" && strpos($notes_b, "emi") !== false;
+            if ($is_cash_emi_req_a !== $is_cash_emi_req_b) {
+                return $is_cash_emi_req_a ? -1 : 1; // buyer-requested installment first
+            }
+
+            $is_upcoming_a = $src_a === "emi" && $sa !== "approve" && $ta !== false && $ta >= $today_ts;
+            $is_upcoming_b = $src_b === "emi" && $sb !== "approve" && $tb !== false && $tb >= $today_ts;
+
+            if ($is_upcoming_a !== $is_upcoming_b) {
+                return $is_upcoming_a ? -1 : 1; // upcoming installment first
+            }
+
+            if ($is_upcoming_a && $is_upcoming_b) {
+                if ($ta === $tb) {
+                    return ((int) ($a->month_no ?? 0)) <=> ((int) ($b->month_no ?? 0));
+                }
+                return $ta <=> $tb; // nearest upcoming first
+            }
+
+            if ($ta === $tb) {
+                return ((int) ($b->id ?? 0)) <=> ((int) ($a->id ?? 0));
+            }
+            return $tb <=> $ta;
+        });
+
+        $total_rows = count($merged_logs);
+        $logs = array_slice($merged_logs, $offset, $limit);
 
         echo json_encode([
             "status" => true,
@@ -715,6 +1583,14 @@ class Plots extends My_Controller
             "user" => $user,
             "plot" => $plot,
             "logs" => $logs,
+            "summary" => [
+                "total_installments" => $total_installments,
+                "remaining_installments" => $remaining_installments,
+                "pending_amount" => $pending_amount,
+                "receiving_amount" => $receiving_amount,
+                "next_installment_date" => $next_installment["date"] ?? null,
+                "next_installment_amount" => (float) ($next_installment["amount"] ?? 0)
+            ],
             "pagination" => [
                 "current_page" => $page,
                 "total_rows" => $total_rows,
@@ -727,25 +1603,57 @@ class Plots extends My_Controller
     {
         $log_id = $this->input->post("id");
         $status = $this->input->post("status");
+        $source = strtolower((string) ($this->input->post("source") ?? "cash"));
 
         if (!$log_id || !$status) {
             echo json_encode(["status" => false, "message" => "Invalid request"]);
             return;
         }
 
+        $table = $source === "emi" ? "emi_logs" : "cash_payment_logs";
+        $amount_field = $source === "emi" ? "emi_amount" : "paid_amount";
+
         // 1. Fetch payment log
-        $log = $this->db->get_where("cash_payment_logs", ["id" => $log_id])->row();
+        $log = $this->db->get_where($table, ["id" => $log_id])->row();
         if (!$log) {
             echo json_encode(["status" => false, "message" => "Payment log not found"]);
             return;
         }
 
+        $old_status = strtolower((string) ($log->status ?? ""));
+        $new_status = strtolower((string) $status);
+        $amount = (float) ($log->{$amount_field} ?? 0);
+
         // 2. Update status in log table
         $this->db->where("id", $log_id);
-        $this->db->update("cash_payment_logs", ["status" => $status]);
+        $this->db->update($table, ["status" => $status]);
 
-        // 3. Only update site values if status is 'approve'
-        if ($status === "approve") {
+        // If this is a cash EMI request, sync matching EMI schedule row status too.
+        if ($source !== "emi") {
+            $cash_notes = (string) ($log->notes ?? "");
+            if (preg_match('/\[EMI:(\d+):(\d+)\]/i', $cash_notes, $m)) {
+                $payment_id = (int) $m[1];
+                $month_no = (int) $m[2];
+                if ($payment_id > 0 && $month_no > 0) {
+                    $emi_row = $this->db->order_by("id", "DESC")->get_where("emi_logs", [
+                        "payment_id" => $payment_id,
+                        "buyer_id" => (int) ($log->buyer_id ?? 0),
+                        "plot_id" => (int) ($log->plot_id ?? 0),
+                        "month_no" => $month_no
+                    ])->row();
+
+                    if ($emi_row) {
+                        $this->db->where("id", (int) $emi_row->id)->update("emi_logs", [
+                            "status" => $status,
+                            "emi_amount" => (float) ($log->paid_amount ?? ($emi_row->emi_amount ?? 0))
+                        ]);
+                    }
+                }
+            }
+        }
+
+        // 3. Keep site values in sync only when approval state changes
+        if ($old_status !== $new_status && $amount > 0) {
             // Get plot_id from log
             $plot_id = $log->plot_id;
 
@@ -757,11 +1665,15 @@ class Plots extends My_Controller
                 // Get current site values
                 $site = $this->db->get_where("sites", ["id" => $site_id])->row();
                 if ($site) {
-                    // Add paid_amount to collected_value
-                    $new_collected_value = (float) $site->collected_value + (float) $log->paid_amount;
+                    $delta = 0;
+                    if ($new_status === "approve" && $old_status !== "approve") {
+                        $delta = $amount;
+                    } elseif ($old_status === "approve" && $new_status !== "approve") {
+                        $delta = -$amount;
+                    }
 
-                    // Subtract paid_amount from site_value
-                    $new_site_value = (float) $site->site_value - (float) $log->paid_amount;
+                    $new_collected_value = (float) $site->collected_value + $delta;
+                    $new_site_value = (float) $site->site_value - $delta;
 
                     // Update site table
                     $this->db->where("id", $site_id);
@@ -778,66 +1690,285 @@ class Plots extends My_Controller
     }
 
 
-   public function download_pdf($buyer_id)
-{
+    public function download_pdf($buyer_id)
+    {
 
-    if (!$buyer_id) {
-        log_message('error', 'Invalid Buyer ID');
-        show_error('Invalid Buyer');
+        if (!$buyer_id) {
+            log_message('error', 'Invalid Buyer ID');
+            show_error('Invalid Buyer');
+        }
+
+        $admin_id = $this->session->userdata('admin')['user_id'];
+
+        // ---- Buyer ----
+        $buyer = $this->db->get_where('buyer', ['id' => $buyer_id])->row();
+
+        // ---- User ----
+        $user = $this->db->select('name,business_name,email,mobile,address,profile_image,facebook,instagram,gst_number,bank_name,account_number,ifsc_code,signature')
+            ->from('user_master')
+            ->where('id', $admin_id)
+            ->get()->row();
+        if ($user) {
+            $user->profile_image_data_uri = null;
+            $user->signature_data_uri = null;
+            $resolveDataUri = function ($path) {
+                if (empty($path)) {
+                    return null;
+                }
+                $clean = str_replace('\\', '/', (string) $path);
+                $candidates = [];
+                $candidates[] = FCPATH . ltrim($clean, '/');
+                $candidates[] = FCPATH . 'uploads/profile/' . basename($clean);
+                $candidates[] = FCPATH . 'uploads/signature/' . basename($clean);
+                foreach ($candidates as $candidate) {
+                    if (!is_file($candidate)) {
+                        continue;
+                    }
+                    $imageData = @file_get_contents($candidate);
+                    if ($imageData === false) {
+                        continue;
+                    }
+                    $mime = function_exists('mime_content_type')
+                        ? mime_content_type($candidate)
+                        : 'image/png';
+                    if (empty($mime)) {
+                        $mime = 'image/png';
+                    }
+                    // Dompdf can fail with unsupported formats (ex: webp). Use safe fallback mime.
+                    if (stripos($mime, 'webp') !== false) {
+                        return null;
+                    }
+                    return 'data:' . $mime . ';base64,' . base64_encode($imageData);
+                }
+                return null;
+            };
+
+            if (!empty($user->profile_image)) {
+                $user->profile_image_data_uri = $resolveDataUri($user->profile_image);
+            }
+
+            // Guaranteed fallback: app main logo
+            if (empty($user->profile_image_data_uri)) {
+                $user->profile_image_data_uri = $resolveDataUri('assets/images/main_logo.png');
+            }
+
+            if (!empty($user->signature)) {
+                $user->signature_data_uri = $resolveDataUri($user->signature);
+            }
+        }
+
+
+        // ---- Payment Logs ----
+        $logs = $this->db->where('buyer_id', $buyer_id)
+            ->where('status', 'approve')
+            ->order_by('created_on', 'ASC')
+            ->get('cash_payment_logs')
+            ->result();
+
+        // ---- Payment Details (for fallback down payment row) ----
+        $payment = $this->db->order_by('id', 'DESC')
+            ->get_where('payment_details', ['buyer_id' => $buyer_id])
+            ->row();
+
+        if ($payment) {
+            $down_payment = (float) ($payment->down_payment ?? 0);
+            $total_price = (float) ($payment->total_price ?? 0);
+            if ($down_payment > 0) {
+                $has_down_payment_in_logs = false;
+                foreach ($logs as $lg) {
+                    $paid = (float) ($lg->paid_amount ?? 0);
+                    $note = strtolower((string) ($lg->notes ?? ''));
+                    if (abs($paid - $down_payment) < 0.01 && strpos($note, 'down') !== false) {
+                        $has_down_payment_in_logs = true;
+                        break;
+                    }
+                }
+
+                if (!$has_down_payment_in_logs) {
+                    $entry = new stdClass();
+                    $entry->id = 0;
+                    $entry->buyer_id = $buyer_id;
+                    $entry->plot_id = (int) ($payment->plot_id ?? 0);
+                    $entry->paid_amount = $down_payment;
+                    $entry->remaining_amount = max(0, $total_price - $down_payment);
+                    $entry->total_price = $total_price;
+                    $entry->notes = 'Initial down payment';
+                    $entry->status = 'approve';
+                    $entry->created_on = $payment->created_on ?? date('Y-m-d H:i:s');
+                    $logs[] = $entry;
+                }
+            }
+        }
+
+        // ---- Approved EMI Logs ----
+        $approved_emi = $this->db->where('buyer_id', $buyer_id)
+            ->where('status', 'approve')
+            ->get('emi_logs')
+            ->result();
+
+        if (!empty($approved_emi)) {
+            $total_price = isset($payment) ? (float) ($payment->total_price ?? 0) : 0;
+            foreach ($approved_emi as $emi) {
+                $entry = new stdClass();
+                $entry->id = $emi->id;
+                $entry->buyer_id = $emi->buyer_id;
+                $entry->plot_id = $emi->plot_id;
+                $entry->paid_amount = (float) $emi->emi_amount;
+                $entry->total_price = $total_price;
+                
+                $ord = (int) $emi->month_no;
+                if ($ord === 1) $ord_str = '1st';
+                elseif ($ord === 2) $ord_str = '2nd';
+                elseif ($ord === 3) $ord_str = '3rd';
+                else $ord_str = $ord . 'th';
+                
+                $entry->notes = $ord_str . ' Installment';
+                $entry->status = 'approve';
+                $entry->created_on = $emi->emi_date ? $emi->emi_date . ' 12:00:00' : ($emi->created_on ?? date('Y-m-d H:i:s'));
+                $logs[] = $entry;
+            }
+        }
+
+        usort($logs, function ($a, $b) {
+            $ta = strtotime((string) ($a->created_on ?? ''));
+            $tb = strtotime((string) ($b->created_on ?? ''));
+            if ($ta === $tb) {
+                return ((int) ($a->id ?? 0)) <=> ((int) ($b->id ?? 0));
+            }
+            return $ta <=> $tb;
+        });
+
+
+        $data = [
+            'buyer' => $buyer,
+            'user' => $user,
+            'logs' => $logs,
+            'payment' => $payment
+        ];
+
+        // ---- PDF Cache (fast repeat downloads) ----
+        $latestLogAt = '';
+        foreach ($logs as $entry) {
+            $created = (string) ($entry->created_on ?? '');
+            if ($created > $latestLogAt) {
+                $latestLogAt = $created;
+            }
+        }
+        $paymentFingerprint = '';
+        if ($payment) {
+            $paymentFingerprint = implode('|', [
+                (string) ($payment->id ?? ''),
+                (string) ($payment->down_payment ?? ''),
+                (string) ($payment->total_price ?? ''),
+                (string) ($payment->created_on ?? ''),
+            ]);
+        }
+        $templateVersion = 'buyer-statement-logo-fix-v2';
+        $cacheKey = md5($templateVersion . '|' . $buyer_id . '|' . $latestLogAt . '|' . $paymentFingerprint . '|' . count($logs));
+        $cacheDir = FCPATH . 'uploads/statements/';
+        if (!is_dir($cacheDir)) {
+            @mkdir($cacheDir, 0755, true);
+        }
+        $cacheFile = $cacheDir . 'Buyer_Statement_' . $buyer_id . '_' . $cacheKey . '.pdf';
+        if (is_file($cacheFile)) {
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="Buyer_Statement_' . $buyer_id . '.pdf"');
+            header('Content-Length: ' . filesize($cacheFile));
+            readfile($cacheFile);
+            exit;
+        }
+
+
+        // ---- Load View ----
+        $html = $this->load->view('buyer_statement', $data, true);
+
+
+
+        $options = new Options();
+        $options->set('isRemoteEnabled', false);
+        $options->set('defaultFont', 'DejaVu Sans');
+
+        $dompdf = new Dompdf($options);
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', 'portrait');
+
+
+
+        $dompdf->render();
+        $pdfOutput = $dompdf->output();
+        if (is_dir($cacheDir) && is_writable($cacheDir)) {
+            @file_put_contents($cacheFile, $pdfOutput);
+        }
+
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="Buyer_Statement_' . $buyer_id . '.pdf"');
+        header('Content-Length: ' . strlen($pdfOutput));
+        echo $pdfOutput;
+        exit;
     }
 
-    $admin_id = $this->session->userdata('admin')['user_id'];
+    public function download_sample_format()
+    {
+        if (ob_get_length()) {
+            ob_end_clean();
+        }
+        ob_start();
 
-    // ---- Buyer ----
-    $buyer = $this->db->get_where('buyer', ['id' => $buyer_id])->row();
+        require_once FCPATH . 'vendor/autoload.php';
 
-    // ---- User ----
-    $user = $this->db->select('business_name,email,mobile,profile_image')
-        ->from('user_master')
-        ->where('id', $admin_id)
-        ->get()->row();
+        $admin_id = $this->admin['user_id'] ?? null;
+        $site_id = (int) $this->input->get('site_id');
+        $sample_site_name = 'Your Site Name';
 
+        if ($admin_id && $site_id > 0) {
+            $site = $this->db
+                ->select('name')
+                ->where('id', $site_id)
+                ->where('admin_id', $admin_id)
+                ->get('sites')
+                ->row();
 
-    // ---- Payment Logs ----
-    $logs = $this->db->where('buyer_id', $buyer_id)
-        ->where('status', 'approve')
-        ->order_by('created_on', 'ASC')
-        ->get('cash_payment_logs')
-        ->result();
+            if ($site && !empty($site->name)) {
+                $sample_site_name = $site->name;
+            }
+        }
 
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
 
-    $data = [
-        'buyer' => $buyer,
-        'user' => $user,
-        'logs' => $logs
-    ];
+        $headers = [
+            'Site Name',
+            'Plot Number',
+            'Size',
+            'Dimension',
+            'Facing',
+            'Price',
+            'Status'
+        ];
 
+        $sheet->fromArray($headers, NULL, 'A1');
 
-    // ---- Load View ----
-    $html = $this->load->view('buyer_statement', $data, true);
+        $sheet->fromArray([
+            $sample_site_name,
+            'Plot 101',
+            '1200',
+            '30x40',
+            'East',
+            '500000',
+            'available'
+        ], NULL, 'A2');
 
-   
+        $filename = "plot_import_template.xlsx";
 
-    $options = new Options();
-    $options->set('isRemoteEnabled', true);
-    $options->set('defaultFont', 'DejaVu Sans');
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+        header('Expires: 0');
+        header('Pragma: public');
 
-    $dompdf = new Dompdf($options);
-    $dompdf->loadHtml($html);
-    $dompdf->setPaper('A4', 'portrait');
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save('php://output');
 
-    
-
-    $dompdf->render();
-
-  
-
-    $dompdf->stream(
-        "Buyer_Statement_{$buyer_id}.pdf",
-        ["Attachment" => true]
-    );
-
-  
-}
-
+        exit;
+    }
 }

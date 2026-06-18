@@ -15,63 +15,6 @@
 		</div>
 		<!--end breadcrumb-->
 
-		<!-- Stats Cards -->
-		<div class="row g-3 mb-4">
-			<div class="col-6 col-lg-3">
-				<div class="usr-stat-card usr-stat--total">
-					<div class="usr-stat__icon">
-						<i class="bx bx-group"></i>
-					</div>
-					<div class="usr-stat__info">
-						<span class="usr-stat__value" id="statTotalUsers">--</span>
-						<span class="usr-stat__label">Total Users</span>
-					</div>
-					<div class="usr-stat__trend usr-stat__trend--up">
-						<i class="bx bx-trending-up"></i>
-					</div>
-				</div>
-			</div>
-			<div class="col-6 col-lg-3">
-				<div class="usr-stat-card usr-stat--active">
-					<div class="usr-stat__icon">
-						<i class="bx bx-user-check"></i>
-					</div>
-					<div class="usr-stat__info">
-						<span class="usr-stat__value" id="statActiveUsers">--</span>
-						<span class="usr-stat__label">Active</span>
-					</div>
-					<div class="usr-stat__trend usr-stat__trend--up">
-						<i class="bx bx-trending-up"></i>
-					</div>
-				</div>
-			</div>
-			<div class="col-6 col-lg-3">
-				<div class="usr-stat-card usr-stat--salary">
-					<div class="usr-stat__icon">
-						<i class="bx bx-rupee"></i>
-					</div>
-					<div class="usr-stat__info">
-						<span class="usr-stat__value" id="statTotalSalary">--</span>
-						<span class="usr-stat__label">Total Salary</span>
-					</div>
-				</div>
-			</div>
-			<div class="col-6 col-lg-3">
-				<div class="usr-stat-card usr-stat--pending">
-					<div class="usr-stat__icon">
-						<i class="bx bx-wallet"></i>
-					</div>
-					<div class="usr-stat__info">
-						<span class="usr-stat__value" id="statTotalPayable">--</span>
-						<span class="usr-stat__label">Total Payable</span>
-					</div>
-					<div class="usr-stat__trend usr-stat__trend--down">
-						<i class="bx bx-trending-down"></i>
-					</div>
-				</div>
-			</div>
-		</div>
-
 		<!-- Main Card -->
 		<div class="card usr-main-card">
 			<div class="card-body">
@@ -82,7 +25,7 @@
 							<i class="bx bx-search usr-search-icon"></i>
 							<input type="text" id="serchUser" class="form-control usr-search-input"
 								placeholder="Search by name, email, mobile...">
-							<kbd class="usr-search-kbd d-none d-md-inline">⌘K</kbd>
+							<kbd class="usr-search-kbd d-none d-md-inline">Ctrl+K</kbd>
 						</div>
 					</div>
 					<div class="usr-toolbar__right">
@@ -101,6 +44,10 @@
 							<i class="bx bx-plus"></i>
 							<span class="d-none d-md-inline">Add User</span>
 						</button>
+						<!-- <button class="btn usr-add-upad-btn" title="Add Upad">
+							<i class="bx bx-plus-circle"></i>
+							<span class="d-none d-md-inline">Add Upad</span>
+						</button> -->
 					</div>
 				</div>
 
@@ -133,21 +80,6 @@
 								<th class="text-center">
 									<div class="usr-th-content justify-content-center">
 										<i class="bx bx-toggle-right"></i> Status
-									</div>
-								</th>
-								<th class="text-center">
-									<div class="usr-th-content justify-content-center">
-										<i class="bx bx-rupee"></i> Salary
-									</div>
-								</th>
-								<th class="text-center">
-									<div class="usr-th-content justify-content-center">
-										<i class="bx bx-money"></i> Upad
-									</div>
-								</th>
-								<th class="text-center">
-									<div class="usr-th-content justify-content-center">
-										<i class="bx bx-wallet"></i> Payable
 									</div>
 								</th>
 								<th class="text-center">Actions</th>
@@ -305,6 +237,7 @@
 		display: flex;
 		flex-direction: column;
 		flex: 1;
+		min-width: 0;
 	}
 
 	.usr-stat__value {
@@ -320,6 +253,7 @@
 		font-weight: 500;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
+		line-height: 1.2;
 	}
 
 	.usr-stat__trend {
@@ -422,7 +356,6 @@
 		padding: 2px 8px;
 		border-radius: 6px;
 		font-size: 11px;
-		font-family: inherit;
 		pointer-events: none;
 		border: 1px solid #d1d5db;
 	}
@@ -468,20 +401,29 @@
 	}
 
 	/* Add Button */
-	.usr-add-btn {
+	.usr-add-btn,
+	.usr-add-upad-btn {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
 		padding: 9px 18px;
 		border-radius: 10px;
-		background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
 		color: #fff;
 		font-size: 13px;
 		font-weight: 600;
 		border: none;
 		cursor: pointer;
 		transition: all 0.25s ease;
+	}
+
+	.usr-add-btn {
+		background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
 		box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+	}
+
+	.usr-add-upad-btn {
+		background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+		box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
 	}
 
 	.usr-add-btn:hover {
@@ -490,7 +432,14 @@
 		color: #fff;
 	}
 
-	.usr-add-btn i {
+	.usr-add-upad-btn:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+		color: #fff;
+	}
+
+	.usr-add-btn i,
+	.usr-add-upad-btn i {
 		font-size: 18px;
 	}
 
@@ -500,7 +449,8 @@
 	.usr-table-wrap {
 		border-radius: 12px;
 		border: 1px solid #f0f1f3;
-		overflow: hidden;
+		overflow-x: auto;
+		overflow-y: hidden;
 	}
 
 	.usr-table {
@@ -1243,6 +1193,45 @@
 	}
 
 	@media (max-width: 767px) {
+		.usr-stats-row {
+			margin-bottom: 14px !important;
+		}
+
+		.usr-stats-row>div {
+			display: flex;
+		}
+
+		.usr-stat-card {
+			width: 100%;
+			padding: 14px 12px;
+			gap: 10px;
+			min-height: 82px;
+		}
+
+		.usr-stat__icon {
+			width: 40px;
+			height: 40px;
+			border-radius: 10px;
+			font-size: 18px;
+		}
+
+		.usr-stat__value {
+			font-size: 17px;
+			word-break: break-word;
+		}
+
+		.usr-stat__label {
+			font-size: 10px;
+			letter-spacing: 0.3px;
+		}
+
+		.usr-stat__trend {
+			width: 26px;
+			height: 26px;
+			font-size: 13px;
+			flex-shrink: 0;
+		}
+
 		.usr-detail-grid {
 			grid-template-columns: 1fr;
 		}
@@ -1275,8 +1264,47 @@
 	}
 
 	@media (max-width: 575px) {
+		.usr-stat-card {
+			padding: 12px 10px;
+			min-height: 76px;
+		}
+
+		.usr-stat__trend {
+			display: none;
+		}
+
+		.usr-stat__value {
+			font-size: 16px;
+		}
+
 		.usr-main-card .card-body {
 			padding: 16px;
+		}
+
+		.usr-toolbar__left {
+			min-width: 0;
+		}
+
+		.usr-toolbar__right {
+			width: 100%;
+			gap: 8px;
+		}
+
+		.usr-filter-group {
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+		}
+
+		.usr-add-btn,
+		.usr-add-upad-btn {
+			width: 100%;
+			justify-content: center;
+		}
+
+		.usr-add-btn span,
+		.usr-add-upad-btn span {
+			display: inline !important;
 		}
 
 		.usr-table thead th {
@@ -1303,9 +1331,9 @@
 	// ═══════════════════════════════════════
 	// Filter Chips
 	// ═══════════════════════════════════════
-	document.querySelectorAll('.usr-filter-chip').forEach(function (chip) {
-		chip.addEventListener('click', function () {
-			document.querySelectorAll('.usr-filter-chip').forEach(function (c) {
+	document.querySelectorAll('.usr-filter-chip').forEach(function(chip) {
+		chip.addEventListener('click', function() {
+			document.querySelectorAll('.usr-filter-chip').forEach(function(c) {
 				c.classList.remove('active');
 			});
 			this.classList.add('active');
@@ -1314,7 +1342,7 @@
 			var rows = document.querySelectorAll('#userTable tr');
 			var hasVisible = false;
 
-			rows.forEach(function (row) {
+			rows.forEach(function(row) {
 				var status = (row.getAttribute('data-status') || '').toLowerCase();
 				if (filter === 'all' || status === filter) {
 					row.style.display = '';
@@ -1334,17 +1362,17 @@
 	// ═══════════════════════════════════════
 	// Search with debounce
 	// ═══════════════════════════════════════
-	(function () {
+	(function() {
 		var searchTimer;
 		var searchInput = document.getElementById('serchUser');
 		if (searchInput) {
-			searchInput.addEventListener('input', function () {
+			searchInput.addEventListener('input', function() {
 				clearTimeout(searchTimer);
 				var val = this.value.toLowerCase();
-				searchTimer = setTimeout(function () {
+				searchTimer = setTimeout(function() {
 					var rows = document.querySelectorAll('#userTable tr');
 					var hasVisible = false;
-					rows.forEach(function (row) {
+					rows.forEach(function(row) {
 						var text = row.textContent.toLowerCase();
 						if (text.indexOf(val) > -1) {
 							row.style.display = '';
@@ -1370,7 +1398,7 @@
 	// ═══════════════════════════════════════
 	// Keyboard shortcut (Cmd/Ctrl + K)
 	// ═══════════════════════════════════════
-	document.addEventListener('keydown', function (e) {
+	document.addEventListener('keydown', function(e) {
 		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
 			e.preventDefault();
 			var input = document.getElementById('serchUser');
@@ -1381,7 +1409,7 @@
 	// ═══════════════════════════════════════
 	// User Detail Modal
 	// ═══════════════════════════════════════
-	document.addEventListener('click', function (e) {
+	document.addEventListener('click', function(e) {
 		var btn = e.target.closest('.viewUserDetail');
 		if (!btn) return;
 
@@ -1398,24 +1426,24 @@
 
 		var row = btn.closest('tr');
 		if (row) {
+			var userId = row.getAttribute('data-id');
 			var name = row.getAttribute('data-name') || '-';
 			var email = row.getAttribute('data-email') || '-';
 			var mobile = row.getAttribute('data-mobile') || '-';
 			var status = row.getAttribute('data-status') || '-';
-			var salary = row.getAttribute('data-salary') || '0';
-			var upad = row.getAttribute('data-upad') || '0';
-			var payable = row.getAttribute('data-payable') || '0';
 			var image = row.getAttribute('data-image') || '';
-			var initials = name.split(' ').map(function (w) { return w[0]; }).join('').toUpperCase().substring(0, 2);
+			var initials = name.split(' ').map(function(w) {
+				return w[0];
+			}).join('').toUpperCase().substring(0, 2);
 			var colorIdx = (name.charCodeAt(0) % 6) + 1;
 
-			var avatarHtml = image
-				? '<img src="' + image + '" class="usr-modal-avatar" alt="' + name + '">'
-				: '<div class="usr-modal-avatar-placeholder usr-avatar-color-' + colorIdx + '">' + initials + '</div>';
+			var avatarHtml = image ?
+				'<img src="' + image + '" class="usr-modal-avatar" alt="' + name + '">' :
+				'<div class="usr-modal-avatar-placeholder usr-avatar-color-' + colorIdx + '">' + initials + '</div>';
 
-			var statusBadge = status.toLowerCase() === 'active'
-				? '<span class="usr-status usr-status--active">Active</span>'
-				: '<span class="usr-status usr-status--inactive">Inactive</span>';
+			var statusBadge = status.toLowerCase() === 'active' ?
+				'<span class="usr-status usr-status--active">Active</span>' :
+				'<span class="usr-status usr-status--inactive">Inactive</span>';
 
 			content.innerHTML =
 				'<div class="usr-modal-profile">' +
@@ -1428,20 +1456,22 @@
 				'</div>' +
 
 				'<div class="usr-detail-card">' +
-				'<h6>Salary Overview</h6>' +
-				'<div class="usr-salary-summary">' +
-				'<div class="usr-salary-box usr-salary-box--salary">' +
-				'<span class="usr-salary-box__value">₹' + salary + '</span>' +
-				'<span class="usr-salary-box__label">Monthly Salary</span>' +
+				'<h6>Uploaded Documents</h6>' +
+				'<div id="usrDocumentsList" class="d-flex flex-column gap-2">' +
+				'  <div class="text-center py-2 text-muted">' +
+				'    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>' +
+				'    <span class="ms-2">Loading documents...</span>' +
+				'  </div>' +
 				'</div>' +
-				'<div class="usr-salary-box usr-salary-box--upad">' +
-				'<span class="usr-salary-box__value">₹' + upad + '</span>' +
-				'<span class="usr-salary-box__label">Total Upad</span>' +
 				'</div>' +
-				'<div class="usr-salary-box usr-salary-box--payable">' +
-				'<span class="usr-salary-box__value">₹' + payable + '</span>' +
-				'<span class="usr-salary-box__label">Total Payable</span>' +
-				'</div>' +
+
+				'<div class="usr-detail-card mt-3">' +
+				'<h6>Assigned Sites</h6>' +
+				'<div id="usrSitesList" class="d-flex flex-column gap-2">' +
+				'  <div class="text-center py-2 text-muted">' +
+				'    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>' +
+				'    <span class="ms-2">Loading assigned sites...</span>' +
+				'  </div>' +
 				'</div>' +
 				'</div>' +
 
@@ -1460,6 +1490,77 @@
 				'<a href="mailto:' + email + '" class="btn btn-sm" style="background:#6366f1;color:#fff;border-radius:10px;padding:8px 20px;font-weight:600"><i class="bx bx-envelope"></i> Email</a>' +
 				'<a href="https://wa.me/' + mobile + '" target="_blank" class="btn btn-sm" style="background:#25d366;color:#fff;border-radius:10px;padding:8px 20px;font-weight:600"><i class="bx bxl-whatsapp"></i> WhatsApp</a>' +
 				'</div>';
+
+			if (userId) {
+				$.ajax({
+					url: '<?= base_url("user/get_user_documents"); ?>',
+					method: 'POST',
+					data: { user_id: userId },
+					dataType: 'json',
+					success: function(res) {
+						var docList = document.getElementById('usrDocumentsList');
+						var sitesList = document.getElementById('usrSitesList');
+
+						// Render documents
+						if (docList) {
+							if (res.status && res.data && res.data.length > 0) {
+								var html = '';
+								res.data.forEach(function(doc) {
+									var fileIcon = 'bx-file';
+									var ext = doc.document_path.split('.').pop().toLowerCase();
+									if (['jpg', 'jpeg', 'png', 'gif'].indexOf(ext) > -1) fileIcon = 'bx-image';
+									else if (ext === 'pdf') fileIcon = 'bx-file-blank';
+									
+									html += '<div class="d-flex align-items-center justify-content-between p-2 rounded" style="background:#f8fafc;border:1px solid #e2e8f0">' +
+											'  <div class="d-flex align-items-center gap-2">' +
+											'    <i class="bx ' + fileIcon + ' text-primary" style="font-size: 20px;"></i>' +
+											'    <div>' +
+											'      <div style="font-weight:600;font-size:12.5px;color:#1e293b">' + doc.document_name + '</div>' +
+											'      <div style="font-size:10.5px;color:#94a3b8">' + doc.created_at + '</div>' +
+											'    </div>' +
+											'  </div>' +
+											'  <a href="' + doc.document_path + '" target="_blank" class="btn btn-sm btn-outline-primary" style="font-size:11.5px;padding:3px 8px;border-radius:6px"><i class="bx bx-download"></i> View</a>' +
+											'</div>';
+								});
+								docList.innerHTML = html;
+							} else {
+								docList.innerHTML = '<div class="text-center py-2 text-muted" style="font-size:12.5px;">No documents uploaded.</div>';
+							}
+						}
+
+						// Render assigned sites
+						if (sitesList) {
+							if (res.status && res.sites && res.sites.length > 0) {
+								var html = '';
+								res.sites.forEach(function(site) {
+									html += '<div class="d-flex align-items-center justify-content-between p-2 rounded" style="background:#f8fafc;border:1px solid #e2e8f0">' +
+											'  <div class="d-flex align-items-center gap-2">' +
+											'    <i class="bx bx-map-pin text-success" style="font-size: 20px;"></i>' +
+											'    <div>' +
+											'      <div style="font-weight:600;font-size:12.5px;color:#1e293b">' + site.site_name + '</div>' +
+											'      <div style="font-size:10.5px;color:#94a3b8">Assigned at: ' + (site.assigned_at || '-') + '</div>' +
+											'    </div>' +
+											'  </div>' +
+											'</div>';
+								});
+								sitesList.innerHTML = html;
+							} else {
+								sitesList.innerHTML = '<div class="text-center py-2 text-muted" style="font-size:12.5px;">No sites assigned.</div>';
+							}
+						}
+					},
+					error: function() {
+						var docList = document.getElementById('usrDocumentsList');
+						var sitesList = document.getElementById('usrSitesList');
+						if (docList) {
+							docList.innerHTML = '<div class="text-center py-2 text-danger" style="font-size:12.5px;">Failed to load documents.</div>';
+						}
+						if (sitesList) {
+							sitesList.innerHTML = '<div class="text-center py-2 text-danger" style="font-size:12.5px;">Failed to load assigned sites.</div>';
+						}
+					}
+				});
+			}
 		}
 	});
 </script>

@@ -557,19 +557,52 @@
     <div class="page-content">
 
         <!-- ===========================
+             PLAN RENEWAL REMINDER
+        ============================ -->
+        <?php
+        $days_left = $this->session->userdata('subscription_days_left');
+        $plan_name = $this->session->userdata('subscription_plan_name');
+        $end_date = $this->session->userdata('subscription_end_date');
+        $role = $this->session->userdata('admin')['role'] ?? 'admin';
+        if ($role !== 'superadmin' && $days_left !== NULL && $days_left <= 7):
+        ?>
+            <div class="card border-0 shadow-sm mb-4 fade-in-up" style="border-radius: 20px; background: linear-gradient(135deg, #fffbeb, #fef3c7); border-left: 5px solid #d97706 !important;">
+                <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="p-3 rounded-circle" style="background: #fef3c7; color: #d97706; display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; box-shadow: 0 4px 6px -1px rgba(217, 119, 6, 0.1);">
+                                <i class="bx bx-time-five fs-3"></i>
+                            </div>
+                            <div>
+                                <span class="text-uppercase tracking-wider fw-bold text-warning-custom small" style="color: #d97706; font-size: 12px; letter-spacing: 0.05em;">Plan Renewal Reminder</span>
+                                <h4 class="mb-1 mt-1 fw-bold text-dark">Your plan ends in <?= $days_left; ?> days.</h4>
+                                <p class="mb-0 text-muted small"><?= htmlspecialchars($plan_name); ?> ends in <?= $days_left; ?> days on <?= date('d M Y, h:i A', strtotime($end_date)); ?>.</p>
+                            </div>
+                        </div>
+                        <div>
+                            <a href="<?= base_url('dashboard/plans'); ?>" class="btn btn-warning px-4 py-2.5 fw-bold text-white d-flex align-items-center gap-2" style="background: #d97706; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(217, 119, 6, 0.2);">
+                                <i class="bx bx-cart-alt"></i> Buy Plan
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <!-- ===========================
              GREETING BANNER
         ============================ -->
         <div class="greeting-banner fade-in-up">
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <h2>
-👋 Welcome back, 
-<?= !empty($this->admin['user_name']) 
-        ? htmlspecialchars($this->admin['user_name']) 
-        : 'Admin'; ?>!
-</h2>
+                        👋 Welcome back,
+                        <?= !empty($this->admin['user_name'])
+                            ? htmlspecialchars($this->admin['user_name'])
+                            : 'Admin'; ?>!
+                    </h2>
 
-<p>Here's what's happening with your dashboard today.</p>
+                    <p>Here's what's happening with your dashboard today.</p>
 
                 </div>
                 <div class="d-none d-md-block">
@@ -656,10 +689,10 @@
                                 <span class="counter-change negative">
                                     <i class="bx bx-trending-up"></i>
                                     +<?php if (!empty($is_superadmin)): ?>
-                                        <?= $admins_last_week ?? 0 ?>
-                                    <?php else: ?>
-                                        <?= $users_last_week ?>
-                                    <?php endif; ?> this week
+                                    <?= $admins_last_week ?? 0 ?>
+                                <?php else: ?>
+                                    <?= $users_last_week ?>
+                                <?php endif; ?> this week
                                 </span>
                             </div>
                             <div class="counter-icon">
@@ -875,65 +908,7 @@
             <?php endif; ?>
 
             <!-- MAP DATA -->
-            <div class="col-md-6 fade-in-up">
-                <div class="card data-card h-100">
-                    <div class="card-body">
-
-                        <div class="d-flex align-items-center justify-content-between mb-4">
-                            <h6 class="section-title">
-                                <span class="title-dot"
-                                    style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);"></span>
-                                Map Data
-                            </h6>
-                            <span class="badge rounded-pill"
-                                style="background: rgba(139,92,246,0.1); color: #8b5cf6; font-size: 11px; padding: 6px 14px;">
-                                <i class="bx bx-map-pin"></i> Geographic
-                            </span>
-                        </div>
-
-                        <div class="d-flex align-items-center gap-3 mb-4 p-3 rounded-4"
-                            style="background: linear-gradient(135deg, #f5f3ff, #ede9fe);">
-                            <div class="main-stat-icon"
-                                style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 6px 20px rgba(139,92,246,0.3);">
-                                <i class="bx bx-map"></i>
-                            </div>
-                            <div>
-                                <h3 class="main-stat-value"><?= $maps_total ?? 0 ?></h3>
-                                <p class="main-stat-label mb-0">Total Maps Available</p>
-                            </div>
-                        </div>
-
-                        <div class="row row-cols-1 row-cols-lg-2 g-3">
-                            <div class="col">
-                                <div class="stat-mini-card mini-warning">
-                                    <div class="mini-icon" style="background: rgba(245,158,11,0.12); color: #f59e0b;">
-                                        <i class="bx bx-hourglass"></i>
-                                    </div>
-                                    <div class="mini-value"><?= $maps_pending ?? 0 ?></div>
-                                    <div class="mini-label">Pending</div>
-                                    <div class="sparkle-line"
-                                        style="background: linear-gradient(90deg, #f59e0b, #fbbf24); margin: 8px auto 0;">
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col">
-                                <div class="stat-mini-card mini-success">
-                                    <div class="mini-icon" style="background: rgba(16,185,129,0.12); color: #10b981;">
-                                        <i class="bx bx-check-circle"></i>
-                                    </div>
-                                    <div class="mini-value"><?= $maps_uploaded ?? 0 ?></div>
-                                    <div class="mini-label">Approved</div>
-                                    <div class="sparkle-line"
-                                        style="background: linear-gradient(90deg, #10b981, #34d399); margin: 8px auto 0;">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
-                </div>
-            </div>
-
+         
         </div>
         <!-- END DATA SECTION -->
 
@@ -944,12 +919,12 @@
 
 <!-- ===== COUNTER ANIMATION SCRIPT ===== -->
 <script>
-    document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('DOMContentLoaded', function() {
 
         // Animate counters
-        document.querySelectorAll('.counter-value, .main-stat-value, .mini-value').forEach(function (el) {
+        document.querySelectorAll('.counter-value, .main-stat-value, .mini-value').forEach(function(el) {
             const raw = el.textContent.trim();
-            const prefix = raw.match(/^[^\d]*/)[0];   // e.g. ₹
+            const prefix = raw.match(/^[^\d]*/)[0]; // e.g. ₹
             const suffix = raw.match(/[^\d]*$/)[0];
             const numeric = raw.replace(/[^\d]/g, '');
 
@@ -974,10 +949,12 @@
         });
 
         // Animate progress bars
-        document.querySelectorAll('.progress-bar').forEach(function (bar) {
+        document.querySelectorAll('.progress-bar').forEach(function(bar) {
             const w = bar.style.width;
             bar.style.width = '0%';
-            setTimeout(function () { bar.style.width = w; }, 400);
+            setTimeout(function() {
+                bar.style.width = w;
+            }, 400);
         });
     });
 </script>

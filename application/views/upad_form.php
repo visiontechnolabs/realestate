@@ -1,4 +1,5 @@
-<div class="page-wrapper">
+<?php $this->load->view('partials/admin_form_theme'); ?>
+<div class="page-wrapper admin-form-page">
     <div class="page-content">
 
         <!-- Breadcrumb -->
@@ -18,7 +19,7 @@
         </div>
 
         <!-- UPAD Form Card -->
-        <div class="card">
+        <div class="card admin-form-card">
             <div class="card-body p-4">
                 <h5 class="card-title">Add UPAD</h5>
                 <hr>
@@ -35,10 +36,14 @@
                                     <select name="user_id" id="userSelect" class="form-control" required>
                                         <option value="">-- Select User --</option>
 
-                                        <?php if (!empty($admin)) : ?>
-                                            <option value="<?= $admin->id; ?>">
-                                                <?= $admin->name; ?>
-                                            </option>
+                                        <?php if (!empty($users)) : ?>
+                                            <?php foreach ($users as $user) : ?>
+                                                <option value="<?= $user->id; ?>" <?= (isset($selected_user_id) && $selected_user_id == $user->id) ? 'selected' : ''; ?>>
+                                                    <?= $user->name; ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        <?php else : ?>
+                                            <option value="" disabled>No active users found</option>
                                         <?php endif; ?>
 
                                     </select>
@@ -47,14 +52,14 @@
 
                                 <!-- UPAD Amount -->
                                 <div class="mb-3">
-                                    <label for="upadAmount" class="form-label">UPAD Amount (₹)</label>
+                                    <label for="upadAmount" class="form-label">UPAD Amount (INR)</label>
                                     <input type="number"
-                                           name="amount"
-                                           class="form-control"
-                                           id="upadAmount"
-                                           placeholder="Enter amount"
-                                           min="1"
-                                           required>
+                                        name="amount"
+                                        class="form-control"
+                                        id="upadAmount"
+                                        placeholder="Enter amount"
+                                        min="1"
+                                        required>
                                     <div class="invalid-feedback">Please enter a valid UPAD amount.</div>
                                 </div>
 
@@ -62,7 +67,7 @@
                                 <div class="mb-3">
                                     <label for="notes" class="form-label">Notes</label>
                                     <textarea name="notes" id="notes" rows="3" class="form-control"
-                                              placeholder="Enter notes (optional)"></textarea>
+                                        placeholder="Enter notes (optional)"></textarea>
                                 </div>
 
                                 <!-- Submit Button -->

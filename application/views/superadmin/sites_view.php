@@ -18,7 +18,7 @@
 
                 <div class="d-flex flex-column flex-md-row align-items-start align-md-items-center justify-content-between mb-4 gap-2">
                     <div>
-                        <h5 class="card-title mb-1 fw-bold">📍 All Sites (Super Admin)</h5>
+                        <h5 class="card-title mb-1 fw-bold">All Sites (Super Admin)</h5>
                         <small class="text-muted">View sites, expenses, and images</small>
                     </div>
                 </div>
@@ -28,7 +28,7 @@
                     <div class="row g-3">
                         <div class="col-12 col-md-8 col-lg-9">
                             <div class="position-relative">
-                                <input type="text" id="siteSearch" class="form-control ps-5 radius-6" placeholder="Search Site by name or location" value="">
+                                <input type="text" id="siteSearch" class="form-control ps-5 radius-6" placeholder="Search Site by name or location" value="<?= htmlspecialchars($site_search ?? ''); ?>">
                                 <span class="position-absolute top-50 translate-middle-y ms-3">
                                     <i class="bx bx-search"></i>
                                 </span>
@@ -67,8 +67,13 @@
                                     $has_images = !empty($site->site_images) &&
                                         $site->site_images !== 'NULL' &&
                                         $site->site_images !== 'null';
+                                    $has_pending_images = !empty($site->site_images_pending) &&
+                                        $site->site_images_pending !== 'NULL' &&
+                                        $site->site_images_pending !== 'null';
 
                                     $has_approved_images = ($img_status === 'approve') && $has_images;
+                                    $has_any_images = $has_approved_images || ($img_status === 'pending' && $has_pending_images);
+
                                     $has_map = !empty($site->site_map) &&
                                         $site->site_map !== 'NULL' &&
                                         $site->site_map !== 'null';
@@ -81,20 +86,57 @@
                                         <td class="fw-semibold"><?= htmlspecialchars($site->name ?? '-'); ?></td>
                                         <td><small><?= htmlspecialchars($site->admin_name ?? '-'); ?></small></td>
                                         <td><small><?= htmlspecialchars($site->location ?? '-'); ?></small></td>
-                                        <td class="text-center"><span class="badge bg-info"><?= $site->total_plots ?? 0; ?></span></td>
+                                        <td class="text-center"><span class="badge bg-info"><?= (int) ($site->plot_count ?? $site->total_plots ?? 0); ?></span></td>
 
                                         <td class="text-center">
                                             <?php if ($img_status === 'pending'): ?>
-                                                <span class="badge bg-warning-light text-warning">Pending</span>
+                                                <?php
+                                                $first_image = '';
+                                                if (!empty($site->site_images_pending) && $site->site_images_pending !== 'NULL' && $site->site_images_pending !== 'null') {
+                                                    $decoded_images = json_decode($site->site_images_pending, true);
+                                                    if (is_array($decoded_images) && !empty($decoded_images[0])) {
+                                                        $first_image = $decoded_images[0];
+                                                    }
+                                                }
+                                                if (empty($first_image) && !empty($site->site_images) && $site->site_images !== 'NULL' && $site->site_images !== 'null') {
+                                                    $decoded_images = json_decode($site->site_images, true);
+                                                    if (is_array($decoded_images) && !empty($decoded_images[0])) {
+                                                        $first_image = $decoded_images[0];
+                                                    }
+                                                }
+                                                ?>
+                                                <?php if (!empty($first_image)): ?>
+                                                    <div class="d-flex flex-column align-items-center">
+                                                        <img src="<?= base_url($first_image); ?>" alt="Site Image"
+                                                            style="width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;">
+                                                        <span class="badge bg-warning-light text-warning mt-1">Pending</span>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <span class="badge bg-warning-light text-warning">Pending</span>
+                                                <?php endif; ?>
 
                                             <?php elseif ($img_status === 'reject'): ?>
                                                 <span class="badge bg-danger-light text-danger">Rejected</span>
 
                                             <?php elseif ($has_approved_images): ?>
-                                                <span class="badge bg-success-light text-success">Approved</span>
-                                                <a href="<?= base_url('superadmin/download_site_image/' . $site->id); ?>" class="btn btn-sm btn-outline-success ms-1 mt-1" title="Download Image">
-                                                    <i class="bx bx-download"></i>
-                                                </a>
+                                                <?php
+                                                $first_image = '';
+                                                if (!empty($site->site_images)) {
+                                                    $decoded_images = json_decode($site->site_images, true);
+                                                    if (is_array($decoded_images) && !empty($decoded_images[0])) {
+                                                        $first_image = $decoded_images[0];
+                                                    }
+                                                }
+                                                ?>
+                                                <?php if (!empty($first_image)): ?>
+                                                    <div class="d-flex flex-column align-items-center">
+                                                        <img src="<?= base_url($first_image); ?>" alt="Site Image"
+                                                            style="width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;">
+                                                        <span class="badge bg-success-light text-success mt-1">Approved</span>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <span class="badge bg-success-light text-success">Approved</span>
+                                                <?php endif; ?>
 
                                             <?php else: ?>
                                                 <span class="badge bg-secondary-light text-secondary">No Images</span>
@@ -103,11 +145,11 @@
 
                                         <td class="text-center">
                                             <?php if ($has_map): ?>
-                                                <span class="badge bg-success-light text-success">✓ Yes</span>
+                                                <span class="badge bg-success-light text-success">Yes</span>
                                             <?php else: ?>
                                                 <span class="badge bg-secondary-light text-secondary mapReason"
                                                     data-reason="<?= htmlspecialchars($reason_text); ?>" style="cursor:pointer;">
-                                                    ✗ No
+                                                    No
                                                 </span>
                                             <?php endif; ?>
                                         </td>
@@ -119,7 +161,7 @@
                                                 </button>
                                                 <button type="button" class="btn btn-success uploadSiteMap"
                                                     data-id="<?= $site->id; ?>"
-                                                    data-has-images="<?= $has_approved_images ? '1' : '0'; ?>"
+                                                    data-has-images="<?= $has_any_images ? '1' : '0'; ?>"
                                                     data-has-map="<?= $has_map ? '1' : '0'; ?>"
                                                     data-bs-toggle="modal" data-bs-target="#siteMapUploadModal" title="Upload Map">
                                                     <i class="bx bx-upload"></i>
@@ -164,7 +206,7 @@
                         enctype="multipart/form-data">
 
                         <div class="modal-header bg-light border-bottom">
-                            <h5 class="modal-title fw-bold">📤 Upload Site Map</h5>
+                            <h5 class="modal-title fw-bold">Upload Site Map</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
 
@@ -199,7 +241,7 @@
             <div class="modal-dialog modal-xl modal-dialog-scrollable">
                 <div class="modal-content border-0 shadow-lg">
                     <div class="modal-header bg-light border-bottom">
-                        <h5 class="modal-title fw-bold">🏢 Site Details</h5>
+                        <h5 class="modal-title fw-bold">Site Details</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body p-4">
@@ -967,10 +1009,10 @@
     });
 
     // Handle Enter key in search
-    document.querySelector('input[name="search"]')?.addEventListener('keypress', function (e) {
+    document.querySelector('#siteSearch')?.addEventListener('keypress', function (e) {
         if (e.key === 'Enter') {
             e.preventDefault();
-            this.form.submit();
+            document.getElementById('siteSearchBtn')?.click();
         }
     });
 
@@ -1007,3 +1049,4 @@
 
 
 </script>
+
